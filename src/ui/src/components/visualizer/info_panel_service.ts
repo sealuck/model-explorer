@@ -26,17 +26,19 @@ export type SortingDirection = 'asc' | 'desc';
  */
 @Injectable()
 export class InfoPanelService {
-  // -2: the index column (default).
+  // -2: the index column.
   // -1: the node label column.
-  curSortingRunIndex = -2;
-  curSortingDirection: SortingDirection = 'asc';
+  // default: 0 (first data column) descending, so highest values surface first.
+  curNodeStatSortingColIndex = 0;
+  curNodeStatSortingDirection: SortingDirection = 'desc';
 
-  curChildrenStatSortingColIndex = -2;
-  curChildrenStatSortingDirection: SortingDirection = 'asc';
+  // -1: the category label column.
+  curCategoryStatSortingColIndex = -1;
+  curCategoryStatSortingDirection: SortingDirection = 'asc';
 
   statsTableCollapsed = false;
-  childrenStatsTableCollapsed = false;
-  nodeDataTableCollapsed = false;
+  categoryStatsTableCollapsed = false;
+  nodeStatsTableCollapsed = false;
 
   collapsedSectionNames = new Set<string>();
 }

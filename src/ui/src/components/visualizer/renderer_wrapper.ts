@@ -42,7 +42,7 @@ import {
   SelectedNodeInfo,
   SubgraphBreadcrumbItem,
 } from './common/types';
-import {isGroupNode} from './common/utils';
+import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
@@ -95,6 +95,7 @@ export class RendererWrapper {
   );
   disableDownloadPngHelpPopup = false;
   transparentPngBackground = new FormControl<boolean>(false);
+  traceDepth = new FormControl<string>('all');
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
 
@@ -165,6 +166,50 @@ export class RendererWrapper {
     this.webglRenderer?.toggleIoTrace();
   }
 
+  handleClickFocusDataflow() {
+    const selectedNodeId = this.appService.getPaneById(this.paneId)
+      ?.selectedNodeInfo?.nodeId;
+    if (!selectedNodeId || !this.modelGraph.modelPath) {
+      return;
+    }
+
+    const selectedNode = this.modelGraph.nodesById[selectedNodeId];
+    if (!isOpNode(selectedNode)) {
+      return;
+    }
+
+    const ssa = selectedNode.attrs?.['mdbg_source_ssa'];
+    if (typeof ssa !== 'string' || !ssa) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('graph_path', this.modelGraph.modelPath);
+    params.set('node_ssa', ssa);
+    params.set('direction', 'both');
+    params.set('depth', `${this.parseTraceDepth() ?? -1}`);
+
+    const nodeDataPaths = this.getNodeDataPathsFromUrl();
+    if (nodeDataPaths.length > 0) {
+      params.set('node_data_paths', nodeDataPaths.join(','));
+    }
+
+    window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
+  }
+
+  handleTraceDepthChange() {
+    this.webglRenderer?.setIoTraceDepth(this.parseTraceDepth());
+  }
+
+  private parseTraceDepth(): number | undefined {
+    const value = (this.traceDepth.value || '').trim().toLowerCase();
+    if (value === '' || value === 'all') {
+      return undefined;
+    }
+    const depth = Number(value);
+    return Number.isFinite(depth) && depth >= 0 ? Math.floor(depth) : undefined;
+  }
+
   handleClickToggleTransparentPngBackground(event: MouseEvent) {
     event.stopPropagation();
 
@@ -175,6 +220,20 @@ export class RendererWrapper {
 
   getActiveSelectedNodeInfo(): SelectedNodeInfo | undefined {
     return this.webglRenderer?.getActiveSelectedNodeInfo();
+  }
+
+  get canFocusDataflow(): boolean {
+    const selectedNodeId = this.appService.getPaneById(this.paneId)
+      ?.selectedNodeInfo?.nodeId;
+    if (!selectedNodeId || !this.modelGraph.modelPath) {
+      return false;
+    }
+    const selectedNode = this.modelGraph.nodesById[selectedNodeId];
+    return (
+      isOpNode(selectedNode) &&
+      typeof selectedNode.attrs?.['mdbg_source_ssa'] === 'string' &&
+      selectedNode.attrs['mdbg_source_ssa'] !== ''
+    );
   }
 
   /** Whether to show the search bar. */
@@ -230,5 +289,24 @@ export class RendererWrapper {
 
   get isTestMode(): boolean {
     return this.appService.testMode;
+  }
+
+  private getNodeDataPathsFromUrl(): string[] {
+    const data = new URLSearchParams(window.location.search).get('data');
+    if (!data) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(data) as {nodeData?: unknown};
+      if (!Array.isArray(parsed.nodeData)) {
+        return [];
+      }
+      return parsed.nodeData.filter((item): item is string => {
+        return typeof item === 'string' && item.length > 0;
+      });
+    } catch {
+      return [];
+    }
   }
 }

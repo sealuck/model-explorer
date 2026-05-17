@@ -26,6 +26,10 @@ export interface IoTracingData {
   visibleNodeIds: Set<string>;
 }
 
+function isWithinDepth(depth: number | undefined, curDepth: number): boolean {
+  return depth == null || depth < 0 || curDepth < depth;
+}
+
 /** Service for managing input/output tracing related tasks. */
 @Injectable()
 export class WebglRendererIoTracingService {
@@ -37,7 +41,7 @@ export class WebglRendererIoTracingService {
     this.webglRenderer = webglRenderer;
   }
 
-  genTracingData() {
+  genTracingData(depth?: number) {
     if (!this.webglRenderer.selectedNodeId) {
       return;
     }
@@ -69,9 +73,11 @@ export class WebglRendererIoTracingService {
 
     // Find all ancestor op nodes.
     const seenAncestorNodeIds = new Set<string>();
-    let queue: string[] = [...seedNodeIds];
+    let queue: Array<{nodeId: string; depth: number}> = seedNodeIds.map(
+      (nodeId) => ({nodeId, depth: 0}),
+    );
     while (queue.length > 0) {
-      const curNodeId = queue.shift()!;
+      const {nodeId: curNodeId, depth: curDepth} = queue.shift()!;
       if (seenAncestorNodeIds.has(curNodeId)) {
         continue;
       }
@@ -82,16 +88,19 @@ export class WebglRendererIoTracingService {
       if (!curNode.hideInLayout) {
         visibleNodeIds.add(curNodeId);
       }
+      if (!isWithinDepth(depth, curDepth)) {
+        continue;
+      }
       for (const incomingEdge of curNode.incomingEdges || []) {
-        queue.push(incomingEdge.sourceNodeId);
+        queue.push({nodeId: incomingEdge.sourceNodeId, depth: curDepth + 1});
       }
     }
 
     // Find all descendant op nodes.
     const seenDescendantNodeIds = new Set<string>();
-    queue = [...seedNodeIds];
+    queue = seedNodeIds.map((nodeId) => ({nodeId, depth: 0}));
     while (queue.length > 0) {
-      const curNodeId = queue.shift()!;
+      const {nodeId: curNodeId, depth: curDepth} = queue.shift()!;
       if (seenDescendantNodeIds.has(curNodeId)) {
         continue;
       }
@@ -102,8 +111,11 @@ export class WebglRendererIoTracingService {
       if (!curNode.hideInLayout) {
         visibleNodeIds.add(curNodeId);
       }
+      if (!isWithinDepth(depth, curDepth)) {
+        continue;
+      }
       for (const outgoingEdge of curNode.outgoingEdges || []) {
-        queue.push(outgoingEdge.targetNodeId);
+        queue.push({nodeId: outgoingEdge.targetNodeId, depth: curDepth + 1});
       }
     }
 

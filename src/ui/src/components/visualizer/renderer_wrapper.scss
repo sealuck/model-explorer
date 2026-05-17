@@ -106,6 +106,12 @@
         transform: rotate(90deg);
         border: 1px solid transparent;
       }
+
+      &.focus-dataflow {
+        font-size: 19px;
+        width: 19px;
+        height: 19px;
+      }
     }
 
     .vertical-divider {
@@ -113,6 +119,23 @@
       border-left: 1px solid var(--me-outline-variant-color);
       margin: 2px 5px;
       height: 20px;
+    }
+
+    .trace-depth-input {
+      width: 42px;
+      height: 22px;
+      border: 1px solid var(--me-outline-variant-color);
+      border-radius: 4px;
+      box-sizing: border-box;
+      color: var(--me-on-surface-color);
+      background: var(--me-surface-container-low-color);
+      font-size: 11px;
+      text-align: center;
+      outline: none;
+
+      &:focus {
+        border-color: var(--me-primary-color);
+      }
     }
 
     edge-overlays-dropdown {

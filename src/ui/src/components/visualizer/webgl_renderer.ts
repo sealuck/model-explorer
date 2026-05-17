@@ -285,6 +285,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
   graphId = '';
   curModelGraph!: ModelGraph;
   tracing = false;
+  ioTraceDepth?: number;
   showBusySpinner = false;
   selectedNodeId = '';
   flashing = false;
@@ -630,7 +631,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
 
       if (this.tracing) {
         if (this.selectedNodeId) {
-          this.webglRendererIoTracingService.genTracingData();
+          this.webglRendererIoTracingService.genTracingData(this.ioTraceDepth);
         } else {
           this.webglRendererIoTracingService.clearTracingData();
         }
@@ -1104,11 +1105,23 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     this.tracing = !this.tracing;
 
     if (this.tracing) {
-      this.webglRendererIoTracingService.genTracingData();
+      this.webglRendererIoTracingService.genTracingData(this.ioTraceDepth);
     } else {
       this.webglRendererIoTracingService.clearTracingData();
     }
 
+    this.webglRendererIoHighlightService.updateIncomingAndOutgoingHighlights();
+    this.updateNodesStyles();
+    this.webglRendererThreejsService.render();
+  }
+
+  setIoTraceDepth(depth?: number) {
+    this.ioTraceDepth = depth;
+    if (!this.tracing) {
+      return;
+    }
+
+    this.webglRendererIoTracingService.genTracingData(this.ioTraceDepth);
     this.webglRendererIoHighlightService.updateIncomingAndOutgoingHighlights();
     this.updateNodesStyles();
     this.webglRendererThreejsService.render();

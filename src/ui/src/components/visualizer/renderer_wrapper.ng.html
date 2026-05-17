@@ -141,6 +141,31 @@ limitations under the License.
           </div>
         </div>
       </ng-template>
+      <input class="trace-depth-input"
+          type="text"
+          placeholder="all"
+          title="Trace IO depth. Use all or empty for all ancestors and descendants; use 0, 1, 2... for N hops."
+          [formControl]="traceDepth"
+          (input)="handleTraceDepthChange()">
+      <div class="mat-icon-container focus-dataflow"
+          [bubble]="helpFocusDataflow"
+          [overlaySize]="helpPopupSize"
+          [hoverDelayMs]="10"
+          [class.disable]="!canFocusDataflow"
+          (click)="handleClickFocusDataflow()">
+        <mat-icon class="toolbar-icon focus-dataflow">
+          account_tree
+        </mat-icon>
+      </div>
+      <ng-template #helpFocusDataflow>
+        <div class="model-explorer-help-popup">
+          Focus dataflow
+          <div class="description">
+            Open selected node's dataflow subgraph using the trace depth field
+          </div>
+        </div>
+      </ng-template>
+      <div class="vertical-divider"></div>
 
       <!-- Edge overlays -->
       @if (showEdgeOverlaysDropdown) {

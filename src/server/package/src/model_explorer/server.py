@@ -19,6 +19,7 @@ import os
 import platform
 import queue
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -31,7 +32,7 @@ from typing import Any, Union
 
 import portpicker
 import requests
-from flask import Flask, Response, make_response, request, send_from_directory
+from flask import Flask, Response, make_response, redirect, request, send_from_directory
 from IPython import display
 from packaging.version import parse
 from termcolor import colored, cprint
@@ -77,6 +78,20 @@ def _make_json_response(obj):
   resp = make_response(body)
   resp.headers['Content-Type'] = 'application/json'
   return resp
+
+
+def _find_mdbg() -> str | None:
+  """Find the mdbg binary; None if not available."""
+  path = os.environ.get('MDBG_BIN')
+  if path and os.path.isfile(path):
+    return path
+  for candidate in [
+      os.path.expanduser('~/mlirdebugger/build/bin/mdbg'),
+      os.path.expanduser('~/mlirdebugger/build-ninja/bin/mdbg'),
+  ]:
+    if os.path.isfile(candidate):
+      return candidate
+  return None
 
 
 def _get_latest_version_from_repo(package_json_url: str) -> str:
@@ -367,6 +382,92 @@ def start(
     else:
       return _make_json_response(convert_adapter_response(graphs))
 
+  @app.route('/api/v1/dataflow')
+  def dataflow():
+    """Extract dataflow subgraph centered on a node."""
+    graph_path = request.args.get('graph_path', '')
+    node_id = request.args.get('node_id', '')
+    node_ssa = request.args.get('node_ssa', '')
+    direction = request.args.get('direction', 'both')
+    depth = request.args.get('depth', '-1')
+
+    mdbg = _find_mdbg()
+    if not mdbg:
+      return _make_json_response(
+          {'error': 'mdbg binary not found; set MDBG_BIN or build mdbg'}
+      )
+
+    args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
+    if node_ssa:
+      args += ['--node', node_ssa]
+    elif node_id:
+      args += ['--node-id', node_id]
+    else:
+      return _make_json_response(
+          {'error': 'source SSA is required'}
+      )
+    args += ['--direction', direction, '--depth', depth]
+
+    try:
+      result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+      if result.returncode != 0:
+        return _make_json_response({'error': result.stderr.strip()})
+      return Response(result.stdout, mimetype='application/json')
+    except subprocess.TimeoutExpired:
+      return _make_json_response({'error': 'dataflow extraction timed out'})
+    except Exception as err:
+      return _make_json_response({'error': str(err)})
+
+  @app.route('/focus')
+  def focus():
+    """Extract focused dataflow subgraph and open in new tab."""
+    graph_path = request.args.get('graph_path', '')
+    node_id = request.args.get('node_id', '')
+    node_ssa = request.args.get('node_ssa', '')
+    direction = request.args.get('direction', 'both')
+    depth = request.args.get('depth', '-1')
+    node_data_paths = request.args.get('node_data_paths', '')
+
+    mdbg = _find_mdbg()
+    if not mdbg:
+      return '<h3>Error: mdbg binary not found</h3>'
+
+    args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
+    if node_ssa:
+      args += ['--node', node_ssa]
+    elif node_id:
+      args += ['--node-id', node_id]
+    else:
+      return '<h3>Error: source SSA is required</h3>'
+    args += ['--direction', direction, '--depth', depth]
+
+    try:
+      result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+      return '<h3>Error: dataflow extraction timed out</h3>'
+    except Exception as err:
+      return f'<h3>Error: {err}</h3>'
+
+    if result.returncode != 0:
+      return f'<h3>Error: {result.stderr}</h3>'
+
+    from urllib.parse import quote
+
+    # Write focused graph to a temp file so Model Explorer can load it.
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.json', prefix='mdbg_focus_', delete=False
+    )
+    tmp.write(result.stdout)
+    tmp.close()
+
+    data = {'models': [{'url': tmp.name, 'adapterId': 'mdbg_mlir'}]}
+    if node_data_paths:
+      paths = [p.strip() for p in node_data_paths.split(',') if p.strip()]
+      if paths:
+        data['nodeData'] = paths
+    return redirect(f'/?data={quote(json.dumps(data))}')
+
   @app.route('/api/v1/load_node_data')
   def load_node_data():
     if config is None:
@@ -538,7 +639,7 @@ def start(
     if not skip_health_check:
       while True:
         try:
-          response = requests.get(f'http://{host}:{port}/')
+          response = requests.get(f'http://{host}:{port}/', timeout=5)
         except:
           continue
 

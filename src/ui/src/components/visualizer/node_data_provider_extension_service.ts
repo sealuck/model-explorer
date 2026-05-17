@@ -419,25 +419,15 @@ export class NodeDataProviderExtensionService {
         );
       }
 
-      // Check if we need to set textColor to white for darker bgColor.
-      //
-      // See: https://gist.github.com/Myndex/e1025706436736166561d339fd667493
+      // Set textColor: white on black backgrounds, dark on everything else.
       if (
         (respResult.textColor == null || respResult.textColor === '') &&
         respResult.bgColor != null
       ) {
         const rgb = this.getRgbFromColor(respResult.bgColor!, '#ffffff');
         if (rgb != null && respResult.bgColor !== 'transparent') {
-          const luminance =
-            Math.pow(rgb.r / 255.0, 2.2) * 0.2126 +
-            Math.pow(rgb.g / 255.0, 2.2) * 0.7152 +
-            Math.pow(rgb.b / 255.0, 2.2) * 0.0722;
-          if (luminance < 0.38) {
-            respResult.textColor = '#ffffff';
-          } else {
-            // on-surface-color in light mode.
-            respResult.textColor = '#1f1f1f';
-          }
+          const isBlack = rgb.r < 30 && rgb.g < 30 && rgb.b < 30;
+          respResult.textColor = isBlack ? '#ffffff' : '#1f1f1f';
         }
       }
 

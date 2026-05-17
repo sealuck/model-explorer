@@ -30,32 +30,52 @@ from .utils import convert_adapter_response
 
 
 class ExtensionManager(object, metaclass=Singleton):
-  BUILTIN_ADAPTER_MODULES: list[str] = [
+  # Adapters that always load; no C++ wrapper needed.
+  _ALWAYS_MODULES: list[str] = [
+      '.builtin_pytorch_exportedprogram_adapter',
+      '.mdbg_mlir_adapter',
+  ]
+  # Adapters that require the ai_edge_model_explorer_adapter C++ wrapper.
+  BUILTIN_ADAPTER_MODULES: list[str] = _ALWAYS_MODULES + [
       '.builtin_tflite_flatbuffer_adapter',
       '.builtin_tflite_mlir_adapter',
       '.builtin_tf_mlir_adapter',
       '.builtin_tf_direct_adapter',
       '.builtin_graphdef_adapter',
-      '.builtin_pytorch_exportedprogram_adapter',
       '.builtin_mlir_adapter',
   ]
+  _BUILTIN_EXTENSION_ALIASES: set[str] = {
+      'builtin_pytorch_exportedprogram',
+      'builtin_pytorch_exportedprogram_adapter',
+      'mdbg_mlir',
+      'mdbg_mlir_adapter',
+      'builtin_tflite_flatbuffer',
+      'builtin_tflite_flatbuffer_adapter',
+      'builtin_tflite_mlir',
+      'builtin_tflite_mlir_adapter',
+      'builtin_tf_mlir',
+      'builtin_tf_mlir_adapter',
+      'builtin_tf_direct',
+      'builtin_tf_direct_adapter',
+      'builtin_graphdef',
+      'builtin_graphdef_adapter',
+      'builtin_mlir',
+      'builtin_mlir_adapter',
+  }
 
   CACHED_REGISTERED_EXTENSIONS: Dict[str, RegisteredExtension] = {}
 
   def __init__(self, custom_extension_modules: list[str] = []):
-    # Don't load extensions from ai_edge_model_explorer_adapter if it is not
-    # available.
     try:
       import ai_edge_model_explorer_adapter
     except ImportError:
-      ExtensionManager.BUILTIN_ADAPTER_MODULES = [
-          '.builtin_pytorch_exportedprogram_adapter',
-      ]
+      ExtensionManager.BUILTIN_ADAPTER_MODULES = ExtensionManager._ALWAYS_MODULES
 
     # For custom extensions (i.e. non-built-in extensions), we load their "main"
     # module by default.
     self.custom_extension_modules = [
         f'{x}.main' for x in custom_extension_modules
+        if x not in ExtensionManager._BUILTIN_EXTENSION_ALIASES
     ]
     self.extensions: list[RegisteredExtension] = []
     self.adapter_runner: AdapterRunner = AdapterRunner()
