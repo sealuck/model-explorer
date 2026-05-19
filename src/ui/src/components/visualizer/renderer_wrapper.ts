@@ -174,18 +174,20 @@ export class RendererWrapper {
     }
 
     const selectedNode = this.modelGraph.nodesById[selectedNodeId];
-    if (!isOpNode(selectedNode)) {
-      return;
-    }
-
-    const ssa = selectedNode.attrs?.['mdbg_source_ssa'];
-    if (typeof ssa !== 'string' || !ssa) {
-      return;
-    }
+    const ssa =
+      isOpNode(selectedNode) &&
+      typeof selectedNode.attrs?.['mdbg_source_ssa'] === 'string' &&
+      selectedNode.attrs['mdbg_source_ssa'] !== ''
+        ? (selectedNode.attrs['mdbg_source_ssa'] as string)
+        : undefined;
 
     const params = new URLSearchParams();
     params.set('graph_path', this.modelGraph.modelPath);
-    params.set('node_ssa', ssa);
+    if (ssa) {
+      params.set('node_ssa', ssa);
+    } else {
+      params.set('node_id', selectedNodeId);
+    }
     params.set('direction', 'both');
     params.set('depth', `${this.parseTraceDepth() ?? -1}`);
 
@@ -225,15 +227,7 @@ export class RendererWrapper {
   get canFocusDataflow(): boolean {
     const selectedNodeId = this.appService.getPaneById(this.paneId)
       ?.selectedNodeInfo?.nodeId;
-    if (!selectedNodeId || !this.modelGraph.modelPath) {
-      return false;
-    }
-    const selectedNode = this.modelGraph.nodesById[selectedNodeId];
-    return (
-      isOpNode(selectedNode) &&
-      typeof selectedNode.attrs?.['mdbg_source_ssa'] === 'string' &&
-      selectedNode.attrs['mdbg_source_ssa'] !== ''
-    );
+    return !!selectedNodeId && !!this.modelGraph.modelPath;
   }
 
   /** Whether to show the search bar. */
