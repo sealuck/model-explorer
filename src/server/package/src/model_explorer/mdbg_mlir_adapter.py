@@ -1,10 +1,11 @@
-"""mdbg MLIR adapter — loads pre-built graph.json directly.
+"""mdbg MLIR adapter."""
 
-mdbg translate already produces Model Explorer GraphCollection JSON,
-so this adapter just reads it and converts to dataclass instances.
-"""
-
+from functools import lru_cache
 import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
 from typing import Dict
 
 from .adapter import Adapter, AdapterMetadata
@@ -17,6 +18,29 @@ from .graph_builder import (
     MetadataItem,
 )
 from .types import ModelExplorerGraphs
+
+
+_DEFAULT_MDBG = str(Path(__file__).resolve().parents[7] / "build" / "bin" / "mdbg")
+
+
+@lru_cache(maxsize=1)
+def _find_mdbg() -> str:
+  env_mdbg = os.environ.get("MDBG")
+  if env_mdbg:
+    if os.path.exists(env_mdbg):
+      return env_mdbg
+    raise RuntimeError(f"MDBG env var points to missing file: {env_mdbg}")
+
+  path_mdbg = shutil.which("mdbg")
+  if path_mdbg:
+    return path_mdbg
+
+  if os.path.exists(_DEFAULT_MDBG):
+    return _DEFAULT_MDBG
+
+  raise RuntimeError(
+      "mdbg binary not found; set MDBG or build build/bin/mdbg"
+  )
 
 
 def _to_kv_list(data: list[dict]) -> list[KeyValue]:
@@ -38,7 +62,7 @@ def _to_edge_list(data: list[dict]) -> list[IncomingEdge]:
   ]
 
 
-def _dict_to_graph_node(d: dict) -> GraphNode:
+def _build_node(d: dict) -> GraphNode:
   return GraphNode(
       id=d["id"],
       label=d["label"],
@@ -53,20 +77,30 @@ def _dict_to_graph_node(d: dict) -> GraphNode:
 def _dict_to_graph(d: dict) -> Graph:
   return Graph(
       id=d["id"],
-      nodes=[_dict_to_graph_node(n) for n in d.get("nodes", [])],
+      nodes=[_build_node(n) for n in d.get("nodes", [])],
       groupNodeAttributes=d.get("groupNodeAttributes"),
   )
 
 
 def _dict_to_graph_collection(d: dict) -> GraphCollection:
   return GraphCollection(
-      label=d["label"],
+      label=d.get("label", ""),
       graphs=[_dict_to_graph(g) for g in d.get("graphs", [])],
   )
 
 
+def _parse_graph_collection_json(text: str) -> GraphCollection:
+  try:
+    data = json.loads(text)
+  except json.JSONDecodeError as e:
+    raise RuntimeError(
+        f"mdbg translate produced invalid JSON: {e}"
+    ) from e
+  return _dict_to_graph_collection(data)
+
+
 class MdbgMlirAdapter(Adapter):
-  """Adapter that loads mdbg translate output (graph.json) directly."""
+  """Adapter that translates MLIR or loads mdbg graph JSON directly."""
 
   metadata = AdapterMetadata(
       id='mdbg_mlir',
@@ -79,8 +113,25 @@ class MdbgMlirAdapter(Adapter):
     super().__init__()
 
   def convert(self, model_path: str, settings: Dict) -> ModelExplorerGraphs:
-    with open(model_path, 'r') as f:
-      data = json.load(f)
-    # mdbg translate produces {'label': ..., 'graphs': [...]}
-    # which maps to a single GraphCollection.
-    return {'graphCollections': [_dict_to_graph_collection(data)]}
+    del settings
+
+    if model_path.endswith(".json"):
+      with open(model_path, "r", encoding="utf-8") as f:
+        try:
+          data = json.load(f)
+        except json.JSONDecodeError as e:
+          raise RuntimeError(f"mdbg graph JSON is invalid: {e}") from e
+      return {"graphCollections": [_dict_to_graph_collection(data)]}
+
+    proc = subprocess.run(
+        [_find_mdbg(), "translate", model_path, "-o", "-"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+      stderr = proc.stderr.strip()
+      detail = f": {stderr}" if stderr else ""
+      raise RuntimeError(f"mdbg translate failed{detail}")
+
+    return {"graphCollections": [_parse_graph_collection_json(proc.stdout)]}
