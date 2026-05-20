@@ -18,18 +18,20 @@
   display: block;
 }
 
+// Matches .container > .section in info_panel.scss exactly.
 .section {
   transition: max-height 150ms ease-out;
   padding-bottom: 8px;
   box-sizing: border-box;
-  border-bottom: 1px solid var(--me-outline-hairline-color);
 
+  /* stylelint-disable-next-line declaration-no-important -- override element style */
   &.collapsed {
-    max-height: 32px;
+    max-height: 32px !important;
     overflow: hidden;
   }
 }
 
+// Matches .container > .section > .header in info_panel.scss exactly.
 .header {
   display: flex;
   align-items: center;
@@ -44,36 +46,36 @@
   color: var(--me-on-surface-color);
   background-color: var(--me-surface-color);
   user-select: none;
-}
 
-button.toggle {
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  margin-left: -8px;
-  margin-right: 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  button.toggle {
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    margin-left: -8px;
+    margin-right: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 
-  mat-icon {
-    color: inherit;
-    font-size: 20px;
-    width: 20px;
-    height: 20px;
-  }
+    mat-icon {
+      color: inherit;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
 
-  &:hover {
-    background-color: var(--me-surface-container-high-color);
-  }
+    &:hover {
+      background-color: var(--me-surface-container-high-color);
+    }
 
-  ::ng-deep .mat-mdc-button-touch-target {
-    display: none;
+    ::ng-deep .mat-mdc-button-touch-target {
+      display: none;
+    }
   }
 }
 
 .content {
-  padding: 6px 8px 0 30px;
+  padding: 6px 8px 0 12px;
   box-sizing: border-box;
 }
 
@@ -89,6 +91,7 @@ button.toggle {
     box-sizing: border-box;
     color: var(--me-on-surface-color);
     background-color: var(--me-surface-container-low-color);
+    font-size: inherit;
   }
 
   mat-icon {
@@ -158,6 +161,7 @@ table {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: inherit;
   }
 
   .op {

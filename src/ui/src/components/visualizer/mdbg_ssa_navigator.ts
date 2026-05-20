@@ -34,6 +34,7 @@ import {MatButtonModule} from '@angular/material/button';
 import {MatIconModule} from '@angular/material/icon';
 
 import {AppService} from './app_service';
+import {LocateNodeInfo} from './common/types';
 import {ModelGraph, OpNode} from './common/model_graph';
 import {isOpNode} from './common/utils';
 
@@ -98,11 +99,12 @@ export class MdbgSsaNavigatorComponent implements OnInit, OnChanges {
   }
 
   handleClickRow(row: SsaRow) {
-    this.appService.selectNode(this.paneId, {
+    const info: LocateNodeInfo = {
       nodeId: row.node.id,
       rendererId: this.paneId,
       isGroupNode: false,
-    });
+    };
+    this.appService.curToLocateNodeInfo.set(info);
   }
 
   trackByNodeId(index: number, row: SsaRow): string {
