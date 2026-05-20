@@ -6,7 +6,18 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 from typing import Dict
+
+# Cache: mlir model_path -> path of the translated graph JSON temp file.
+# Populated during convert(); consumed by server.py focus/dataflow endpoints
+# so the already-translated JSON is reused without re-invoking mdbg translate.
+_translate_cache: dict[str, str] = {}
+
+
+def get_cached_graph_json_path(model_path: str) -> str | None:
+  """Return the cached graph JSON path for a model, or None if not cached."""
+  return _translate_cache.get(model_path)
 
 from .adapter import Adapter, AdapterMetadata
 from .graph_builder import (
@@ -116,6 +127,7 @@ class MdbgMlirAdapter(Adapter):
     del settings
 
     if model_path.endswith(".json"):
+      _translate_cache[model_path] = model_path
       with open(model_path, "r", encoding="utf-8") as f:
         try:
           data = json.load(f)
@@ -133,5 +145,13 @@ class MdbgMlirAdapter(Adapter):
       stderr = proc.stderr.strip()
       detail = f": {stderr}" if stderr else ""
       raise RuntimeError(f"mdbg translate failed{detail}")
+
+    # Cache translated JSON to disk; reused by focus/dataflow endpoints.
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w', suffix='.json', prefix='mdbg_graph_', delete=False
+    )
+    tmp.write(proc.stdout)
+    tmp.close()
+    _translate_cache[model_path] = tmp.name
 
     return {"graphCollections": [_parse_graph_collection_json(proc.stdout)]}

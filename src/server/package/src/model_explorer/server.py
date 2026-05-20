@@ -49,6 +49,7 @@ from .extension_manager import ExtensionManager
 from .file_change_handler import FileChangeHandler
 from .server_directive_dispatcher import ServerDirectiveDispatcher
 from .server_director import ServerDirector
+from .mdbg_mlir_adapter import get_cached_graph_json_path
 from .utils import convert_adapter_response
 
 server_directive_dispatcher = ServerDirectiveDispatcher()
@@ -397,6 +398,12 @@ def start(
           {'error': 'mdbg binary not found; set MDBG_BIN or build mdbg'}
       )
 
+    # Resolve .mlir path to the cached graph JSON from the earlier translate.
+    if graph_path.endswith('.mlir'):
+      cached = get_cached_graph_json_path(graph_path)
+      if cached:
+        graph_path = cached
+
     args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
     if node_ssa:
       args += ['--node', node_ssa]
@@ -431,6 +438,12 @@ def start(
     mdbg = _find_mdbg()
     if not mdbg:
       return '<h3>Error: mdbg binary not found</h3>'
+
+    # Resolve .mlir path to the cached graph JSON from the earlier translate.
+    if graph_path.endswith('.mlir'):
+      cached = get_cached_graph_json_path(graph_path)
+      if cached:
+        graph_path = cached
 
     args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
     if node_ssa:
