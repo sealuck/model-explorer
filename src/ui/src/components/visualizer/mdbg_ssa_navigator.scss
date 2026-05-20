@@ -1,0 +1,172 @@
+// @license
+// Copyright 2024 The Model Explorer Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ==============================================================================
+
+:host {
+  display: block;
+}
+
+.section {
+  transition: max-height 150ms ease-out;
+  padding-bottom: 8px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--me-outline-hairline-color);
+
+  &.collapsed {
+    max-height: 32px;
+    overflow: hidden;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  padding: 4px 12px 0;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-color);
+  user-select: none;
+}
+
+button.toggle {
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  margin-left: -8px;
+  margin-right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  mat-icon {
+    color: inherit;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  &:hover {
+    background-color: var(--me-surface-container-high-color);
+  }
+
+  ::ng-deep .mat-mdc-button-touch-target {
+    display: none;
+  }
+}
+
+.content {
+  padding: 6px 8px 0 30px;
+  box-sizing: border-box;
+}
+
+.filter {
+  margin-bottom: 4px;
+  position: relative;
+
+  input {
+    width: 100%;
+    border: 1px solid var(--me-outline-variant-color);
+    padding: 3px 22px 3px 20px;
+    border-radius: 4px;
+    box-sizing: border-box;
+    color: var(--me-on-surface-color);
+    background-color: var(--me-surface-container-low-color);
+  }
+
+  mat-icon {
+    font-size: 12px;
+    width: 12px;
+    height: 12px;
+    color: var(--me-on-surface-variant-color);
+  }
+
+  .filter-icon {
+    position: absolute;
+    top: 6px;
+    left: 4px;
+  }
+
+  button.clear {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    ::ng-deep .mat-mdc-button-touch-target {
+      display: none;
+    }
+  }
+}
+
+.table-container {
+  max-height: 220px;
+  overflow: auto;
+}
+
+table {
+  border: 1px solid var(--me-outline-variant-color);
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  user-select: none;
+  background-color: var(--me-surface-container-low-color);
+  overflow: hidden;
+
+  thead {
+    height: 24px;
+    background-color: var(--me-surface-container-high-color);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  tr {
+    cursor: pointer;
+  }
+
+  tbody tr:hover {
+    outline: 1px solid var(--me-outline-color);
+  }
+
+  td,
+  th {
+    padding: 2px 4px;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .op {
+    width: 45%;
+    max-width: 120px;
+  }
+
+  .ssa {
+    border-left: 1px solid var(--me-outline-hairline-color);
+    max-width: 160px;
+  }
+}

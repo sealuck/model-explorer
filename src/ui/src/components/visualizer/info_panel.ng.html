@@ -19,6 +19,9 @@ limitations under the License.
 <div class="container"
     [class.graph-info]="showNodeDataProviderSummary"
     [style.font-size.px]="fontSize">
+  <mdbg-ssa-navigator [modelGraph]="modelGraph" [paneId]="paneId">
+  </mdbg-ssa-navigator>
+
   @for (section of sections; track section.label) {
     @if (section.items.length > 0) {
       <div class="section" #sectionEle

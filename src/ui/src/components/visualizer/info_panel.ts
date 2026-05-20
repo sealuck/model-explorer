@@ -74,6 +74,7 @@ import {ExpandableInfoText} from './expandable_info_text';
 import {HoverableLabel} from './hoverable_label';
 import {InfoPanelService} from './info_panel_service';
 import {genIoTreeData, IoTree, TreeNode} from './io_tree';
+import {MdbgSsaNavigatorComponent} from './mdbg_ssa_navigator';
 import {NodeDataProviderExtensionService} from './node_data_provider_extension_service';
 import {NodeDataProviderSummaryPanel} from './node_data_provider_summary_panel';
 import {Paginator} from './paginator';
@@ -158,6 +159,7 @@ const DEFAULT_WIDTH = 370;
     MatTooltipModule,
     Paginator,
     IoTree,
+    MdbgSsaNavigatorComponent,
     NodeDataProviderSummaryPanel,
   ],
   providers: [InfoPanelService],
@@ -642,6 +644,10 @@ export class InfoPanel {
 
   get canShowGraphInfo(): boolean {
     return this.curModelGraph != null && this.curSelectedNode == null;
+  }
+
+  get modelGraph(): ModelGraph {
+    return this.curModelGraph!;
   }
 
   get showNodeDataProviderSummary(): boolean {
