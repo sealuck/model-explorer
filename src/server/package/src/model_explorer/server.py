@@ -90,12 +90,12 @@ def _find_mdbg() -> str | None:
   path = shutil.which('mdbg')
   if path:
     return path
-  for candidate in [
-      os.path.expanduser('~/mlirdebugger/build/bin/mdbg'),
-      os.path.expanduser('~/mlirdebugger/build-ninja/bin/mdbg'),
-  ]:
-    if os.path.isfile(candidate):
-      return candidate
+  # Infer project root: server.py is 7 levels inside third_party/model-explorer.
+  _here = os.path.dirname(os.path.abspath(__file__))
+  _root = os.path.normpath(os.path.join(_here, *(['..'] * 7)))
+  candidate = os.path.join(_root, 'build', 'bin', 'mdbg')
+  if os.path.isfile(candidate):
+    return candidate
   return None
 
 
