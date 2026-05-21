@@ -18,6 +18,7 @@ import logging
 import os
 import platform
 import queue
+import shutil
 import socket
 import subprocess
 import sys
@@ -85,6 +86,9 @@ def _find_mdbg() -> str | None:
   """Find the mdbg binary; None if not available."""
   path = os.environ.get('MDBG_BIN')
   if path and os.path.isfile(path):
+    return path
+  path = shutil.which('mdbg')
+  if path:
     return path
   for candidate in [
       os.path.expanduser('~/mlirdebugger/build/bin/mdbg'),
