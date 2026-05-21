@@ -147,6 +147,13 @@ limitations under the License.
           title="Trace IO depth. Use all or empty for all ancestors and descendants; use 0, 1, 2... for N hops."
           [formControl]="traceDepth"
           (input)="handleTraceDepthChange()">
+      @if (showFocusDirection) {
+        <select class="focus-direction-select" [formControl]="focusDirection">
+          <option value="both">both</option>
+          <option value="backward">upstream</option>
+          <option value="forward">downstream</option>
+        </select>
+      }
       <div class="mat-icon-container focus-dataflow"
           [bubble]="helpFocusDataflow"
           [overlaySize]="helpPopupSize"

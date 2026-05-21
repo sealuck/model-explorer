@@ -96,6 +96,9 @@ export class RendererWrapper {
   disableDownloadPngHelpPopup = false;
   transparentPngBackground = new FormControl<boolean>(false);
   traceDepth = new FormControl<string>('all');
+  readonly focusDirection = new FormControl<string>('both', {
+    nonNullable: true,
+  });
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
 
@@ -193,7 +196,7 @@ export class RendererWrapper {
     } else {
       params.set('node_id', selectedNode.id);
     }
-    params.set('direction', 'backward');
+    params.set('direction', this.focusDirection.value);
     params.set('depth', `${this.parseTraceDepth() ?? -1}`);
 
     const nodeDataPaths = this.getNodeDataPathsFromUrl();
@@ -256,6 +259,10 @@ export class RendererWrapper {
   }
 
   get showDownloadPng(): boolean {
+    return !this.inPopup;
+  }
+
+  get showFocusDirection(): boolean {
     return !this.inPopup;
   }
 

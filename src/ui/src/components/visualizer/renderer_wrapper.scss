@@ -138,6 +138,21 @@
       }
     }
 
+    .focus-direction-select {
+      height: 22px;
+      border: 1px solid var(--me-outline-variant-color);
+      border-radius: 4px;
+      box-sizing: border-box;
+      color: var(--me-on-surface-color);
+      background: var(--me-surface-container-low-color);
+      font-size: 11px;
+      outline: none;
+
+      &:focus {
+        border-color: var(--me-primary-color);
+      }
+    }
+
     edge-overlays-dropdown {
       margin-left: 4px;
     }
