@@ -174,7 +174,10 @@ export class RendererWrapper {
     }
 
     const selectedNode = this.modelGraph.nodesById[selectedNodeId];
-    const ssa =
+    const isFunctionOutput =
+      isOpNode(selectedNode) &&
+      selectedNode.attrs?.['mdbg_kind'] === 'function_output';
+    const sourceSSA =
       isOpNode(selectedNode) &&
       typeof selectedNode.attrs?.['mdbg_source_ssa'] === 'string' &&
       selectedNode.attrs['mdbg_source_ssa'] !== ''
@@ -183,10 +186,12 @@ export class RendererWrapper {
 
     const params = new URLSearchParams();
     params.set('graph_path', this.modelGraph.modelPath);
-    if (ssa) {
-      params.set('node_ssa', ssa);
+    if (isFunctionOutput) {
+      params.set('node_id', selectedNode.id);
+    } else if (sourceSSA) {
+      params.set('node_ssa', sourceSSA);
     } else {
-      params.set('node_id', selectedNodeId);
+      params.set('node_id', selectedNode.id);
     }
     params.set('direction', 'backward');
     params.set('depth', `${this.parseTraceDepth() ?? -1}`);
