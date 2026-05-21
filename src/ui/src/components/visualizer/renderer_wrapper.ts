@@ -188,7 +188,7 @@ export class RendererWrapper {
     } else {
       params.set('node_id', selectedNodeId);
     }
-    params.set('direction', 'both');
+    params.set('direction', 'backward');
     params.set('depth', `${this.parseTraceDepth() ?? -1}`);
 
     const nodeDataPaths = this.getNodeDataPathsFromUrl();
