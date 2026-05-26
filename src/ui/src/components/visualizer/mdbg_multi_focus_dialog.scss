@@ -1,0 +1,105 @@
+// @license
+// Copyright 2024 The Model Explorer Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ==============================================================================
+
+:host {
+  display: block;
+  position: absolute;
+  top: 56px;
+  left: 12px;
+  width: 260px;
+  z-index: 100;
+
+  &.pushed-down {
+    top: 92px;
+  }
+}
+
+// Matches .container > .section in info_panel.scss exactly.
+.section {
+  padding-bottom: 8px;
+  box-sizing: border-box;
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-color);
+  border: 1px solid var(--me-outline-variant-color);
+  border-radius: 4px;
+  outline: 2px solid var(--me-surface-color);
+}
+
+// Matches .container > .section > .header in info_panel.scss exactly.
+.header {
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  padding: 6px 12px 0;
+  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-color);
+  user-select: none;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 0;
+  box-sizing: border-box;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--me-on-surface-variant-color);
+  font-size: 11px;
+}
+
+textarea,
+input,
+select {
+  width: 100%;
+  border: 1px solid var(--me-outline-variant-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-container-low-color);
+  font: inherit;
+  outline: none;
+
+  &:focus {
+    border-color: var(--me-primary-color);
+  }
+}
+
+textarea {
+  min-height: 64px;
+  padding: 4px 6px;
+  resize: vertical;
+}
+
+input,
+select {
+  height: 24px;
+  padding: 2px 6px;
+}
+
+button {
+  align-self: flex-end;
+}

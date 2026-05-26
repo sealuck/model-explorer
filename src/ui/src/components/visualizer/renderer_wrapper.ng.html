@@ -172,6 +172,20 @@ limitations under the License.
           </div>
         </div>
       </ng-template>
+      <div class="mat-icon-container multi-focus-dataflow"
+          [bubble]="helpMultiFocusDataflow"
+          [overlaySize]="helpPopupSize"
+          [hoverDelayMs]="10"
+          (click)="handleClickMultiFocusDialog()">
+        <mat-icon class="toolbar-icon multi-focus-dataflow">
+          hub
+        </mat-icon>
+      </div>
+      <ng-template #helpMultiFocusDataflow>
+        <div class="model-explorer-help-popup">
+          Multi-Focus dataflow — open a subgraph centred on multiple SSA values
+        </div>
+      </ng-template>
       <div class="vertical-divider"></div>
 
       <!-- Edge overlays -->
@@ -231,6 +245,14 @@ limitations under the License.
         </snapshot-manager>
       </ng-container>
     </div>
+
+    @if (showMultiFocusDialog) {
+      <mdbg-multi-focus-dialog
+          [class.pushed-down]="showSubgraphBreadcrumbs"
+          [modelGraph]="modelGraph"
+          [paneId]="paneId">
+      </mdbg-multi-focus-dialog>
+    }
   }
 
   <!-- subgraph breadcrumbs -->

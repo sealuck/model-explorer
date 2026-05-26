@@ -44,6 +44,7 @@ import {
 } from './common/types';
 import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
+import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
 import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
@@ -62,6 +63,7 @@ import {WebglRenderer} from './webgl_renderer';
     MatIconModule,
     MatMenuModule,
     MatTooltipModule,
+    MdbgMultiFocusDialogComponent,
     ReactiveFormsModule,
     SearchBar,
     SnapshotManager,
@@ -99,6 +101,7 @@ export class RendererWrapper {
   readonly focusDirection = new FormControl<string>('both', {
     nonNullable: true,
   });
+  showMultiFocusDialog = false;
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
 
@@ -205,6 +208,10 @@ export class RendererWrapper {
     }
 
     window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
+  }
+
+  handleClickMultiFocusDialog() {
+    this.showMultiFocusDialog = !this.showMultiFocusDialog;
   }
 
   handleTraceDepthChange() {
