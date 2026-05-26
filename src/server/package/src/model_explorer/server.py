@@ -483,12 +483,21 @@ def start(
     return any(part in seed_ssas for part in parts)
 
   def _build_seed_roles(data: dict, node_ssas: str) -> dict:
-    seed_ssas = {ssa.strip() for ssa in node_ssas.split(',') if ssa.strip()}
+    seed_ssas = set()
+    seed_node_ids = set()
+    for token in [ssa.strip() for ssa in node_ssas.split(',') if ssa.strip()]:
+      if token.startswith('nodeId:'):
+        seed_node_ids.add(token[len('nodeId:'):])
+      else:
+        seed_ssas.add(token)
     seed_roles = {}
     for graph in data.get('graphs', []):
       graph_id = graph.get('id', '')
       results = {}
       for node in graph.get('nodes', []):
+        if node.get('id', '') in seed_node_ids:
+          results[node.get('id', '')] = {'bgColor': '#4e9af1'}
+          continue
         for attr in node.get('attrs', []):
           if attr.get('key') != 'mdbg_source_ssa':
             continue

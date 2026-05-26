@@ -243,6 +243,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
 
   /** Triggered when the "open in popup" button is clickded. */
   @Output() readonly openInPopupClicked = new EventEmitter<PopupPanelData>();
+  @Output() readonly nodeCtrlClicked = new EventEmitter<string>();
 
   @ViewChild('container', {static: true}) container!: ElementRef<HTMLElement>;
   @ViewChild('canvas', {static: true}) canvas!: ElementRef<HTMLCanvasElement>;
@@ -1174,6 +1175,10 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       (IS_MAC && (event.metaKey || event.ctrlKey)) ||
       (!IS_MAC && event.ctrlKey)
     ) {
+      if (this.hoveredNodeId) {
+        this.nodeCtrlClicked.emit(this.hoveredNodeId);
+        return;
+      }
       this.draggingArea = true;
       this.rangeZoomDragArea.start(
         event,

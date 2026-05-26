@@ -89,6 +89,13 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     window.open(`/multi-focus?${params.toString()}`, '_blank', 'noopener');
   }
 
+  appendToken(token: string): void {
+    const current = this.nodesSsas.value;
+    const sep = current.trim() === '' ? '' : '\n';
+    this.nodesSsas.setValue(current + sep + token);
+    this.changeDetectorRef.markForCheck();
+  }
+
   get graphPath(): string {
     return this.modelGraph?.modelPath ?? '';
   }

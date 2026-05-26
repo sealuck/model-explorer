@@ -85,6 +85,8 @@ export class RendererWrapper {
   @Output() readonly openInPopupClicked = new EventEmitter<PopupPanelData>();
 
   @ViewChild('webglRenderer') webglRenderer?: WebglRenderer;
+  @ViewChild(MdbgMultiFocusDialogComponent)
+  multiFocusDialogRef?: MdbgMultiFocusDialogComponent;
 
   readonly helpPopupSize: OverlaySizeConfig = {
     minWidth: 0,
@@ -212,6 +214,27 @@ export class RendererWrapper {
 
   handleClickMultiFocusDialog() {
     this.showMultiFocusDialog = !this.showMultiFocusDialog;
+  }
+
+  handleNodeCtrlClicked(nodeId: string) {
+    const node = this.modelGraph.nodesById[nodeId];
+    if (!node || !isOpNode(node)) {
+      return;
+    }
+
+    let token = `nodeId:${node.id}`;
+    if (node.attrs?.['mdbg_kind'] !== 'function_output') {
+      const sourceSsa = node.attrs?.['mdbg_source_ssa'];
+      if (typeof sourceSsa === 'string' && sourceSsa !== '') {
+        token = sourceSsa;
+      }
+    }
+
+    if (!this.showMultiFocusDialog) {
+      this.showMultiFocusDialog = true;
+      this.changeDetectorRef.detectChanges();
+    }
+    this.multiFocusDialogRef?.appendToken(token);
   }
 
   handleTraceDepthChange() {
