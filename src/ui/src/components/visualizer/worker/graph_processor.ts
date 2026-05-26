@@ -530,8 +530,13 @@ export class GraphProcessor {
               (id) => modelGraph.nodesById[id],
             );
 
-      // Split the group node if its child count is over the threshold.
-      if (children.length > this.groupNodeChildrenCountThreshold) {
+      // Split the group node if its child count is over the threshold. Do not
+      // split root-level nodes: on flat graphs this replaces the navigable
+      // graph with disconnected collapsed section containers.
+      if (
+        curGroupNode != null &&
+        children.length > this.groupNodeChildrenCountThreshold
+      ) {
         hasLargeGroupNodes = true;
         const layoutGraph = getLayoutGraph(
           curGroupNode?.id || '',
