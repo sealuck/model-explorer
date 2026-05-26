@@ -81,7 +81,7 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     params.set('graph_path', this.graphPath);
     params.set('node_ssas', this.nodeSsas.join(','));
     params.set('mode', this.mode.value);
-    params.set('depth', this.depth.value.trim());
+    params.set('depth', this.parseDepth());
     if (this.mode.value !== 'inter-seed') {
       params.set('direction', this.direction.value);
     }
@@ -106,5 +106,12 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
 
   get canFocus(): boolean {
     return this.graphPath !== '' && this.nodeSsas.length > 0;
+  }
+
+  private parseDepth(): string {
+    const v = this.depth.value.trim().toLowerCase();
+    if (v === '' || v === 'all') return '-1';
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? String(Math.floor(n)) : '-1';
   }
 }
