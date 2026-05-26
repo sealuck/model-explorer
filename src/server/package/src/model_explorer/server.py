@@ -429,6 +429,95 @@ def start(
     except Exception as err:
       return _make_json_response({'error': str(err)})
 
+  def _resolve_mdbg_graph_path(graph_path: str) -> str:
+    # Resolve .mlir path to the cached graph JSON from the earlier translate.
+    if graph_path.endswith('.mlir'):
+      cached = get_cached_graph_json_path(graph_path)
+      if cached:
+        return cached
+    return graph_path
+
+  def _run_multi_dataflow(
+      graph_path: str,
+      node_ssas: str,
+      mode: str,
+      direction: str,
+      depth: str,
+  ):
+    mdbg = _find_mdbg()
+    if not mdbg:
+      return None, 'mdbg binary not found; set MDBG_BIN or build mdbg'
+    if not node_ssas:
+      return None, 'source SSAs are required'
+
+    graph_path = _resolve_mdbg_graph_path(graph_path)
+    args = [
+        mdbg,
+        'dataflow',
+        '--graph',
+        graph_path,
+        '--nodes',
+        node_ssas,
+        '--mode',
+        mode,
+        '--direction',
+        direction,
+        '--depth',
+        depth,
+        '-o',
+        '-',
+    ]
+
+    try:
+      result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+      if result.returncode != 0:
+        return None, result.stderr.strip()
+      return result, None
+    except subprocess.TimeoutExpired:
+      return None, 'dataflow extraction timed out'
+    except Exception as err:
+      return None, str(err)
+
+  def _attr_matches_any_ssa(value: str, seed_ssas: set[str]) -> bool:
+    parts = [part.strip() for part in value.split(',') if part.strip()]
+    return any(part in seed_ssas for part in parts)
+
+  def _build_seed_roles(data: dict, node_ssas: str) -> dict:
+    seed_ssas = {ssa.strip() for ssa in node_ssas.split(',') if ssa.strip()}
+    seed_roles = {}
+    for graph in data.get('graphs', []):
+      graph_id = graph.get('id', '')
+      results = {}
+      for node in graph.get('nodes', []):
+        for attr in node.get('attrs', []):
+          if attr.get('key') != 'mdbg_source_ssa':
+            continue
+          if _attr_matches_any_ssa(attr.get('value', ''), seed_ssas):
+            results[node.get('id', '')] = {'bgColor': '#4e9af1'}
+            break
+      if results:
+        seed_roles[graph_id] = {
+            'name': 'Seed roles',
+            'results': results,
+        }
+    return seed_roles
+
+  @app.route('/api/v1/multi-dataflow')
+  def multi_dataflow():
+    """Extract dataflow subgraph centered on multiple nodes."""
+    graph_path = request.args.get('graph_path', '')
+    node_ssas = request.args.get('node_ssas', '')
+    mode = request.args.get('mode', 'union')
+    direction = request.args.get('direction', 'both')
+    depth = request.args.get('depth', '-1')
+
+    result, error = _run_multi_dataflow(
+        graph_path, node_ssas, mode, direction, depth
+    )
+    if error:
+      return _make_json_response({'error': error})
+    return Response(result.stdout, mimetype='application/json')
+
   @app.route('/focus')
   def focus():
     """Extract focused dataflow subgraph and open in new tab."""
@@ -483,6 +572,49 @@ def start(
       paths = [p.strip() for p in node_data_paths.split(',') if p.strip()]
       if paths:
         data['nodeData'] = paths
+    return redirect(f'/?data={quote(json.dumps(data))}')
+
+  @app.route('/multi-focus')
+  def multi_focus():
+    """Extract focused multi-node dataflow subgraph and open in new tab."""
+    graph_path = request.args.get('graph_path', '')
+    node_ssas = request.args.get('node_ssas', '')
+    mode = request.args.get('mode', 'union')
+    direction = request.args.get('direction', 'both')
+    depth = request.args.get('depth', '-1')
+    node_data_paths = request.args.get('node_data_paths', '')
+
+    result, error = _run_multi_dataflow(
+        graph_path, node_ssas, mode, direction, depth
+    )
+    if error:
+      return f'<h3>Error: {error}</h3>'
+
+    try:
+      subgraph = json.loads(result.stdout)
+      seed_roles = _build_seed_roles(subgraph, node_ssas)
+    except Exception as err:
+      return f'<h3>Error: {err}</h3>'
+
+    from urllib.parse import quote
+
+    # Write focused graph and seed roles to temp files so Model Explorer can
+    # load them.
+    tmp_dir = tempfile.mkdtemp(prefix='mdbg_multi_focus_')
+    graph_tmp_path = os.path.join(tmp_dir, 'subgraph.json')
+    with open(graph_tmp_path, 'w') as f:
+      f.write(result.stdout)
+    seed_roles_path = os.path.join(tmp_dir, 'seed_roles.json')
+    with open(seed_roles_path, 'w') as f:
+      f.write(json.dumps(seed_roles, indent=2))
+
+    paths = [seed_roles_path]
+    if node_data_paths:
+      paths += [p.strip() for p in node_data_paths.split(':') if p.strip()]
+    data = {
+        'models': [{'url': graph_tmp_path, 'adapterId': 'mdbg_mlir'}],
+        'nodeData': paths,
+    }
     return redirect(f'/?data={quote(json.dumps(data))}')
 
   @app.route('/api/v1/load_node_data')
