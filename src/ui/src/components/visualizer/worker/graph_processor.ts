@@ -531,10 +531,17 @@ export class GraphProcessor {
             );
 
       // Split the group node if its child count is over the threshold. Do not
-      // split root-level nodes: on flat graphs this replaces the navigable
-      // graph with disconnected collapsed section containers.
+      // split root-level nodes or top-level groups whose children are all ops:
+      // flat MLIR graphs may be wrapped in a function namespace, and splitting
+      // that wrapper replaces the navigable graph with disconnected collapsed
+      // section containers.
+      const isTopLevelFlatGroup =
+        curGroupNode != null &&
+        curGroupNode.nsParentId == null &&
+        children.every((child) => isOpNode(child));
       if (
         curGroupNode != null &&
+        !isTopLevelFlatGroup &&
         children.length > this.groupNodeChildrenCountThreshold
       ) {
         hasLargeGroupNodes = true;
