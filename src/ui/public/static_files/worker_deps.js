@@ -68,7 +68,7 @@
     let visited = {};
   
     function dfs(v) {
-      if (visited.hasOwnProperty(v)) {
+      if (Object.prototype.hasOwnProperty.call(visited, v)) {
         return;
       }
       visited[v] = true;
@@ -2576,7 +2576,7 @@
   
     visited[v] = true;
     tree.neighbors(v).forEach(w => {
-      if (!visited.hasOwnProperty(w)) {
+      if (!Object.prototype.hasOwnProperty.call(visited, w)) {
         nextLim = dfsAssignLowLim(tree, visited, nextLim, w, v);
       }
     });
@@ -2617,7 +2617,7 @@
         let neighbors = tree.neighbors(v);
         for (let i = neighbors.length-1; i>=0; i--) {
           const w = neighbors[i];
-          if (!visited.hasOwnProperty(w)) {
+          if (!Object.prototype.hasOwnProperty.call(visited, w)) {
             // Push neighbor node onto the stack
             stack.push({ v: w, parent: v, stage: 0 });
           }
@@ -2757,33 +2757,53 @@
    * Post-conditions:
    *
    *    1. Each node will be assign an (unnormalized) "rank" property.
-   */
+  */
   function longestPath(g) {
-    var visited = {};
+    var WHITE = 0;
+    var GRAY = 1;
+    var BLACK = 2;
+    var state = {};
   
-    function dfs(v) {
-      var label = g.node(v);
-      if (visited.hasOwnProperty(v)) {
-        return label.rank;
-      }
-      visited[v] = true;
+    function visit(start) {
+      var stack = [{ v: start, i: 0, outEdges: g.outEdges(start) }];
+      state[start] = GRAY;
   
-      var rank = Math.min(...g.outEdges(v).map(e => {
-        if (e == null) {
-          return Number.POSITIVE_INFINITY;
+      while (stack.length) {
+        var frame = stack[stack.length - 1];
+        var e = frame.outEdges[frame.i++];
+  
+        if (e != null) {
+          var w = e.w;
+          if ((state[w] || WHITE) === WHITE) {
+            state[w] = GRAY;
+            stack.push({ v: w, i: 0, outEdges: g.outEdges(w) });
+          }
+          continue;
         }
   
-        return dfs(e.w) - g.edge(e).minlen;
-      }));
+        var rank = Math.min(...frame.outEdges.map(edge => {
+          if (edge == null) {
+            return Number.POSITIVE_INFINITY;
+          }
   
-      if (rank === Number.POSITIVE_INFINITY) {
-        rank = 0;
+          return g.node(edge.w).rank - g.edge(edge).minlen;
+        }));
+  
+        if (rank === Number.POSITIVE_INFINITY) {
+          rank = 0;
+        }
+  
+        g.node(frame.v).rank = rank;
+        state[frame.v] = BLACK;
+        stack.pop();
       }
-  
-      return (label.rank = rank);
     }
   
-    g.sources().forEach(dfs);
+    g.sources().forEach(v => {
+      if ((state[v] || WHITE) !== BLACK) {
+        visit(v);
+      }
+    });
   }
   
   /*
@@ -3146,7 +3166,7 @@
     var cmpt;
   
     function dfs(v) {
-      if (visited.hasOwnProperty(v)) return;
+      if (Object.prototype.hasOwnProperty.call(visited, v)) return;
       visited[v] = true;
       cmpt.push(v);
       g.successors(v).forEach(dfs);
@@ -3203,7 +3223,7 @@
       if (curr[1]) {
         acc.push(curr[0]);
       } else {
-        if (!visited.hasOwnProperty(curr[0])) {
+        if (!Object.prototype.hasOwnProperty.call(visited, curr[0])) {
           visited[curr[0]] = true;
           stack.push([curr[0], true]);
           forEachRight(navigation(curr[0]), w => stack.push([w, false]));
@@ -3216,7 +3236,7 @@
     var stack = [v];
     while (stack.length > 0) {
       var curr = stack.pop();
-      if (!visited.hasOwnProperty(curr)) {
+      if (!Object.prototype.hasOwnProperty.call(visited, curr)) {
         visited[curr] = true;
         acc.push(curr);
         forEachRight(navigation(curr), w => stack.push(w));
@@ -3482,7 +3502,7 @@
       stack.push(v);
   
       g.successors(v).forEach(function(w) {
-        if (!visited.hasOwnProperty(w)) {
+        if (!Object.prototype.hasOwnProperty.call(visited, w)) {
           dfs(w);
           entry.lowlink = Math.min(entry.lowlink, visited[w].lowlink);
         } else if (visited[w].onStack) {
@@ -3503,7 +3523,7 @@
     }
   
     g.nodes().forEach(function(v) {
-      if (!visited.hasOwnProperty(v)) {
+      if (!Object.prototype.hasOwnProperty.call(visited, v)) {
         dfs(v);
       }
     });
@@ -3522,7 +3542,7 @@
         throw new CycleException();
       }
   
-      if (!visited.hasOwnProperty(node)) {
+      if (!Object.prototype.hasOwnProperty.call(visited, node)) {
         stack[node] = true;
         visited[node] = true;
         g.predecessors(node).forEach(visit);
