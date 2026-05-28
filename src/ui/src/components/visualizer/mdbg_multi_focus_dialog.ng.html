@@ -19,7 +19,22 @@ limitations under the License.
 <div class="section">
   <div class="header">Multi-Focus Dataflow</div>
 
-  <div class="content">
+  <form class="content" (submit)="$event.preventDefault()">
+    <input
+        #fileInput
+        type="file"
+        accept=".txt"
+        hidden
+        (change)="onFileSelected($event)">
+
+    <button
+        mat-stroked-button
+        class="import-button"
+        type="button"
+        (click)="fileInput.click()">
+      Import from file
+    </button>
+
     <label>
       SSA values
       <textarea
@@ -27,6 +42,17 @@ limitations under the License.
           [formControl]="nodesSsas">
       </textarea>
     </label>
+
+    @if (importWarnings.length > 0) {
+      <div class="import-warning">
+        Unresolved import lines:
+        <ul>
+          @for (warning of importWarnings; track $index) {
+            <li>{{warning.line}}: {{warning.reason}}</li>
+          }
+        </ul>
+      </div>
+    }
 
     <label>
       Mode
@@ -54,9 +80,10 @@ limitations under the License.
 
     <button mat-flat-button
         color="primary"
+        type="button"
         [disabled]="!canFocus"
         (click)="handleClickFocus()">
       Focus
     </button>
-  </div>
+  </form>
 </div>

@@ -31,7 +31,41 @@ import {FormControl, ReactiveFormsModule} from '@angular/forms';
 import {MatButtonModule} from '@angular/material/button';
 import {MatIconModule} from '@angular/material/icon';
 
-import {ModelGraph} from './common/model_graph';
+import {ModelGraph, ModelNode} from './common/model_graph';
+import {isOpNode, isOutputsNode} from './common/utils';
+import {
+  importFromLines,
+  SsaFileImportUnresolvedLine,
+} from './ssa_file_importer';
+
+const SSA_ATTR_KEY = 'mdbg_source_ssa';
+
+function readAttr(node: ModelNode, key: string): string | undefined {
+  if (!isOpNode(node) || node.attrs == null) {
+    return undefined;
+  }
+
+  const attrs: unknown = node.attrs;
+  if (Array.isArray(attrs)) {
+    const attr = attrs.find((item) => {
+      if (item == null || typeof item !== 'object') {
+        return false;
+      }
+      return (item as Record<string, unknown>)['key'] === key;
+    });
+    const value =
+      attr != null && typeof attr === 'object'
+        ? (attr as Record<string, unknown>)['value']
+        : undefined;
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  if (typeof attrs !== 'object') {
+    return undefined;
+  }
+  const value = (attrs as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
 
 /** Toolbar dialog for focusing dataflow from multiple source SSA values. */
 @Component({
@@ -55,6 +89,8 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
   readonly mode = new FormControl<string>('union', {nonNullable: true});
   readonly direction = new FormControl<string>('both', {nonNullable: true});
   readonly depth = new FormControl<string>('all', {nonNullable: true});
+
+  importWarnings: SsaFileImportUnresolvedLine[] = [];
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   private readonly destroyRef = inject(DestroyRef);
@@ -101,6 +137,39 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     this.changeDetectorRef.markForCheck();
   }
 
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const fileText = String(reader.result ?? '');
+      const outputNodeSsas = this.getOutputNodeSsas();
+      const result = importFromLines(fileText.split(/\r?\n/), outputNodeSsas);
+
+      this.nodesSsas.setValue('');
+      for (const ssa of result.resolved) {
+        this.appendToken(ssa);
+      }
+
+      this.importWarnings = result.unresolved;
+      input.value = '';
+      this.changeDetectorRef.markForCheck();
+      this.handleClickFocus();
+    };
+    reader.onerror = () => {
+      this.importWarnings = [
+        {line: file.name, reason: 'unable to read file'},
+      ];
+      input.value = '';
+      this.changeDetectorRef.markForCheck();
+    };
+    reader.readAsText(file);
+  }
+
   get graphPath(): string {
     return this.modelGraph?.modelPath ?? '';
   }
@@ -125,5 +194,49 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     if (v === '' || v === 'all') return '-1';
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? String(Math.floor(n)) : '-1';
+  }
+
+  private getOutputNodeSsas(): string[] {
+    const outputNodes =
+      this.modelGraph?.nodes?.filter((node) => isOutputsNode(node)) ?? [];
+    const mdbgOutputs = outputNodes
+      .filter((node) => readAttr(node, 'mdbg_kind') === 'function_output')
+      .sort((a, b) => {
+        return (
+          Number(readAttr(a, 'mdbg_output_index') ?? '0') -
+          Number(readAttr(b, 'mdbg_output_index') ?? '0')
+        );
+      })
+      .map((node) => readAttr(node, SSA_ATTR_KEY) ?? '');
+
+    if (mdbgOutputs.length > 0) {
+      return mdbgOutputs;
+    }
+
+    const graphOutputsNode = outputNodes.find((node) => isOpNode(node));
+    if (!graphOutputsNode || !isOpNode(graphOutputsNode)) {
+      console.warn(
+        'Outputs node not found; output aliases cannot resolve.',
+      );
+      return [];
+    }
+
+    return [...(graphOutputsNode.incomingEdges || [])]
+      .sort((a, b) => {
+        return Number(a.targetNodeInputId) - Number(b.targetNodeInputId);
+      })
+      .map((edge) => {
+        const sourceNode = this.modelGraph.nodesById?.[edge.sourceNodeId];
+        if (!sourceNode || !isOpNode(sourceNode)) {
+          return '';
+        }
+        const sourceSsa = sourceNode.attrs?.[SSA_ATTR_KEY];
+        if (typeof sourceSsa === 'string' && sourceSsa !== '') {
+          return sourceSsa;
+        }
+        const outputSsa =
+          sourceNode.outputsMetadata?.[edge.sourceNodeOutputId]?.[SSA_ATTR_KEY];
+        return typeof outputSsa === 'string' ? outputSsa : '';
+      });
   }
 }

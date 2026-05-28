@@ -103,3 +103,29 @@ select {
 button {
   align-self: flex-end;
 }
+
+.import-button {
+  align-self: stretch;
+  width: 100%;
+  font: inherit;
+
+  ::ng-deep .mdc-button__label {
+    font-family: 'Google Sans Text', Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+}
+
+.import-warning {
+  margin-left: 0;
+  color: #b76e00;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 18px;
+
+  ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+}
