@@ -82,6 +82,35 @@ export function isGroupNode(node: ModelNode | undefined): node is GroupNode {
   return node?.nodeType === NodeType.GROUP_NODE;
 }
 
+/** Checks whether the given node represents graph outputs. */
+export function isOutputsNode(node: ModelNode): boolean {
+  if (node.label === 'GraphOutputs' || node.label === 'Outputs') {
+    return true;
+  }
+  if (!isOpNode(node) || node.attrs == null) {
+    return false;
+  }
+
+  const attrs: unknown = node.attrs;
+  if (Array.isArray(attrs)) {
+    return attrs.some((attr) => {
+      if (attr == null || typeof attr !== 'object') {
+        return false;
+      }
+      const attrRecord = attr as Record<string, unknown>;
+      return (
+        attrRecord['key'] === 'mdbg_kind' &&
+        attrRecord['value'] === 'function_output'
+      );
+    });
+  }
+
+  return (
+    typeof attrs === 'object' &&
+    (attrs as Record<string, unknown>)['mdbg_kind'] === 'function_output'
+  );
+}
+
 /**
  * Checks whether the given node is a group node and it doesn't have any
  * children nodes.

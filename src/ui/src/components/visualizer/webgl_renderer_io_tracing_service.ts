@@ -17,17 +17,23 @@
  */
 
 import {Injectable} from '@angular/core';
-import {OpNode} from './common/model_graph';
-import {isGroupNode, isOpNode} from './common/utils';
+import {ModelNode, OpNode} from './common/model_graph';
+import {isGroupNode, isOpNode, isOutputsNode} from './common/utils';
 import {WebglRenderer} from './webgl_renderer';
 
 /** IO tracing related data. */
 export interface IoTracingData {
   visibleNodeIds: Set<string>;
+  focusPathNodeIds: Set<string>;
+  retainedOutputNodeIds: Set<string>;
 }
 
 function isWithinDepth(depth: number | undefined, curDepth: number): boolean {
   return depth == null || depth < 0 || curDepth < depth;
+}
+
+function isGraphOutputsNode(node: ModelNode): boolean {
+  return isOutputsNode(node);
 }
 
 /** Service for managing input/output tracing related tasks. */
@@ -119,6 +125,21 @@ export class WebglRendererIoTracingService {
       }
     }
 
+    const focusPathNodeIds = new Set(visibleNodeIds);
+    const retainedOutputNodeIds = new Set<string>();
+    for (const node of this.webglRenderer.curModelGraph.nodes) {
+      if (
+        !isGraphOutputsNode(node) ||
+        !isOpNode(node) ||
+        node.hideInLayout ||
+        visibleNodeIds.has(node.id)
+      ) {
+        continue;
+      }
+      retainedOutputNodeIds.add(node.id);
+      visibleNodeIds.add(node.id);
+    }
+
     // Add all their parent group nodes to `visibleNodeIds`.
     for (const nodeId of [...visibleNodeIds]) {
       let curNodeId = nodeId;
@@ -134,6 +155,8 @@ export class WebglRendererIoTracingService {
 
     this.curIoTracingData = {
       visibleNodeIds,
+      focusPathNodeIds,
+      retainedOutputNodeIds,
     };
   }
 

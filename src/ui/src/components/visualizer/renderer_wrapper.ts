@@ -42,7 +42,7 @@ import {
   SelectedNodeInfo,
   SubgraphBreadcrumbItem,
 } from './common/types';
-import {isGroupNode, isOpNode} from './common/utils';
+import {isGroupNode, isOpNode, isOutputsNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
 import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
 import {SearchBar} from './search_bar';
@@ -206,6 +206,10 @@ export class RendererWrapper {
     }
     params.set('direction', this.focusDirection.value);
     params.set('depth', `${this.parseTraceDepth() ?? -1}`);
+    const retainedOutputNodeIds = this.getGraphOutputNodeIds();
+    if (retainedOutputNodeIds.length > 0) {
+      params.set('retained_output_node_ids', retainedOutputNodeIds.join(','));
+    }
 
     const nodeDataPaths = this.getNodeDataPathsFromUrl();
     if (nodeDataPaths.length > 0) {
@@ -224,6 +228,12 @@ export class RendererWrapper {
     this.multiFocusDialogRef?.clearTokens();
     this.showMultiFocusDialog = false;
     this.changeDetectorRef.markForCheck();
+  }
+
+  private getGraphOutputNodeIds(): string[] {
+    return this.modelGraph.nodes
+      .filter((node) => isOutputsNode(node))
+      .map((node) => node.id);
   }
 
   handleNodeCtrlClicked(nodeId: string) {

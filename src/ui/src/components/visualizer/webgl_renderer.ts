@@ -99,6 +99,7 @@ import {
   IS_MAC,
   isGroupNode,
   isOpNode,
+  isOutputsNode,
   matchNodeForQueries,
   processNodeStylerRules,
   splitLabel,
@@ -163,6 +164,10 @@ import {WorkerService} from './worker_service';
 const NODE_BORDER_WIDTH = 1.2;
 const SELECTED_NODE_BORDER_WIDTH = 2;
 const IO_HIGHLIGHT_BORDER_WIDTH = 1.5;
+const SUBTLE_OUTPUT_NODE_BODY_OPACITY = 0.95;
+const SUBTLE_OUTPUT_NODE_BG_COLOR = '#dde7f5';
+const SUBTLE_OUTPUT_NODE_BORDER_COLOR = '#5d7ba8';
+const SUBTLE_OUTPUT_NODE_BORDER_WIDTH = 1.5;
 const ZOOM_FIT_ON_NODE_DURATION = 400;
 const EDGE_WIDTH = 1.0;
 const SUBGRAPH_INDICATOR_SIZE = 14;
@@ -359,6 +364,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
   private readonly edges = new WebglEdges(EDGE_WIDTH);
   readonly texts = new WebglTexts(this.threejsService);
   private readonly mousePos = new THREE.Vector2();
+  private readonly focusOutputNodeHighlights!: WebglRendererHighlightNodesService;
   private readonly syncNavigationRelatedNodesHighlights!: WebglRendererHighlightNodesService;
   private readonly syncNavigationDiffHighlights!: WebglRendererHighlightNodesService;
   private draggingArea = false;
@@ -497,6 +503,10 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     this.webglRendererSnapshotService.init(this);
     this.webglRendererSubgraphSelectionService.init(this);
     this.webglRendererThreejsService.init(this, this.appService.config());
+    this.focusOutputNodeHighlights = new WebglRendererHighlightNodesService(
+      this,
+      -WEBGL_ELEMENT_Y_FACTOR * 0.32,
+    );
     this.syncNavigationRelatedNodesHighlights =
       new WebglRendererHighlightNodesService(
         this,
@@ -3216,11 +3226,10 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
 
     // Tracing.
     if (this.webglRendererIoTracingService.curIoTracingData != null) {
+      const tracingData = this.webglRendererIoTracingService.curIoTracingData;
       const nodeIds = Object.keys(this.curModelGraph.nodesById).filter(
         (id) =>
-          !this.webglRendererIoTracingService.curIoTracingData!.visibleNodeIds.has(
-            id,
-          ) && this.isNodeRendered(id),
+          !tracingData.visibleNodeIds.has(id) && this.isNodeRendered(id),
       );
       this.nodeBodies.updateOpacity(nodeIds, 0.2);
       if (useSvgTextRenderer) {
@@ -3242,12 +3251,8 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       const edgeIdsToDim = this.edgesToRender
         .filter(
           ({edge}) =>
-            !this.webglRendererIoTracingService.curIoTracingData!.visibleNodeIds.has(
-              edge.fromNodeId,
-            ) ||
-            !this.webglRendererIoTracingService.curIoTracingData!.visibleNodeIds.has(
-              edge.toNodeId,
-            ),
+            !tracingData.visibleNodeIds.has(edge.fromNodeId) ||
+            !tracingData.visibleNodeIds.has(edge.toNodeId),
         )
         .map(({edge}) => edge.id);
       this.edges.updateColors(
@@ -3256,6 +3261,42 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
           this.visualizerThemeService.getColor(ColorVariable.EDGE_DIMMED_COLOR),
         ),
       );
+    }
+
+    const allGraphOutputsNodeIds = Object.keys(this.curModelGraph.nodesById)
+      .filter((id) => {
+        const node = this.curModelGraph.nodesById[id];
+        return (
+          node != null &&
+          isOutputsNode(node) &&
+          this.isNodeRendered(id)
+        );
+      });
+    if (allGraphOutputsNodeIds.length > 0) {
+      this.nodeBodies.updateOpacity(
+        allGraphOutputsNodeIds,
+        SUBTLE_OUTPUT_NODE_BODY_OPACITY,
+      );
+      this.nodeBodies.updateBgColor(
+        allGraphOutputsNodeIds,
+        new THREE.Color(SUBTLE_OUTPUT_NODE_BG_COLOR),
+      );
+      this.focusOutputNodeHighlights.setNodeHighlights(
+        allGraphOutputsNodeIds.reduce(
+          (acc, nodeId) => {
+            acc[nodeId] = {
+              nodeId,
+              borderColor: SUBTLE_OUTPUT_NODE_BORDER_COLOR,
+              borderWidth: SUBTLE_OUTPUT_NODE_BORDER_WIDTH,
+            };
+            return acc;
+          },
+          {} as {[nodeId: string]: HighlightInfo},
+        ),
+        true,
+      );
+    } else {
+      this.focusOutputNodeHighlights.clearNodeHighlights();
     }
   }
 
