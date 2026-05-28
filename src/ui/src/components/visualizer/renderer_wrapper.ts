@@ -48,6 +48,7 @@ import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
 import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
+import {SubgraphSelectionService} from './subgraph_selection_service';
 import {ViewOnNode} from './view_on_node';
 import {WebglRenderer} from './webgl_renderer';
 
@@ -110,6 +111,7 @@ export class RendererWrapper {
   constructor(
     private readonly appService: AppService,
     private readonly changeDetectorRef: ChangeDetectorRef,
+    private readonly subgraphSelectionService: SubgraphSelectionService,
   ) {
     effect(() => {
       const pane = this.appService.getPaneById(this.paneId);
@@ -180,6 +182,7 @@ export class RendererWrapper {
     if (!selectedNodeId || !this.modelGraph.modelPath) {
       return;
     }
+    this.clearMultiFocusState();
 
     const selectedNode = this.modelGraph.nodesById[selectedNodeId];
     const isFunctionOutput =
@@ -214,6 +217,13 @@ export class RendererWrapper {
 
   handleClickMultiFocusDialog() {
     this.showMultiFocusDialog = !this.showMultiFocusDialog;
+  }
+
+  private clearMultiFocusState(): void {
+    this.subgraphSelectionService.clearSelection();
+    this.multiFocusDialogRef?.clearTokens();
+    this.showMultiFocusDialog = false;
+    this.changeDetectorRef.markForCheck();
   }
 
   handleNodeCtrlClicked(nodeId: string) {

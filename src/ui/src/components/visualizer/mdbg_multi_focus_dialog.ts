@@ -96,6 +96,11 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     this.changeDetectorRef.markForCheck();
   }
 
+  clearTokens(): void {
+    this.nodesSsas.setValue('');
+    this.changeDetectorRef.markForCheck();
+  }
+
   get graphPath(): string {
     return this.modelGraph?.modelPath ?? '';
   }
