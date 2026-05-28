@@ -37,10 +37,24 @@ limitations under the License.
 
     <label>
       SSA values
-      <textarea
-          placeholder="%0, %1"
-          [formControl]="nodesSsas">
-      </textarea>
+      <div class="chip-container">
+        @for (chip of chipList; track chip) {
+          <span
+              #chipElement
+              class="chip"
+              [class.chip-added]="addedChips.has(chip)"
+              [attr.data-token]="chip">
+            <span class="chip-label">{{chip}}</span>
+            <button
+                class="chip-remove"
+                type="button"
+                aria-label="Remove SSA value"
+                (click)="removeToken(chip)">
+              &times;
+            </button>
+          </span>
+        }
+      </div>
     </label>
 
     @if (importWarnings.length > 0) {

@@ -3,6 +3,10 @@
 *.swp
 .DS_Store
 
+# install_deps.sh writes the last-built submodule commit SHA here.
+# Pure local build state; must never be committed.
+.me_build_stamp
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

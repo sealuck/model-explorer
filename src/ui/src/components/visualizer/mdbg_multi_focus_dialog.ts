@@ -22,9 +22,12 @@ import {
   ChangeDetectorRef,
   Component,
   DestroyRef,
+  ElementRef,
   inject,
   Input,
   OnInit,
+  QueryList,
+  ViewChildren,
 } from '@angular/core';
 import {takeUntilDestroyed} from '@angular/core/rxjs-interop';
 import {FormControl, ReactiveFormsModule} from '@angular/forms';
@@ -84,12 +87,16 @@ function readAttr(node: ModelNode, key: string): string | undefined {
 export class MdbgMultiFocusDialogComponent implements OnInit {
   @Input({required: true}) modelGraph!: ModelGraph;
   @Input({required: true}) paneId!: string;
+  @ViewChildren('chipElement')
+  chipElements!: QueryList<ElementRef<HTMLElement>>;
 
   readonly nodesSsas = new FormControl<string>('', {nonNullable: true});
   readonly mode = new FormControl<string>('union', {nonNullable: true});
   readonly direction = new FormControl<string>('both', {nonNullable: true});
   readonly depth = new FormControl<string>('all', {nonNullable: true});
 
+  readonly chipList: string[] = [];
+  readonly addedChips = new Set<string>();
   importWarnings: SsaFileImportUnresolvedLine[] = [];
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
@@ -126,14 +133,46 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
   }
 
   appendToken(token: string): void {
-    const current = this.nodesSsas.value;
-    const sep = current.trim() === '' ? '' : '\n';
-    this.nodesSsas.setValue(current + sep + token);
+    const normalizedToken = token.trim();
+    if (normalizedToken === '') {
+      return;
+    }
+    if (this.chipList.includes(normalizedToken)) {
+      this.addedChips.delete(normalizedToken);
+      this.changeDetectorRef.markForCheck();
+      return;
+    }
+
+    this.chipList.push(normalizedToken);
+    this.syncNodesSsas();
+    this.addedChips.add(normalizedToken);
+    this.changeDetectorRef.markForCheck();
+
+    setTimeout(() => {
+      this.scrollChipIntoView(normalizedToken);
+    });
+    setTimeout(() => {
+      this.addedChips.delete(normalizedToken);
+      this.changeDetectorRef.markForCheck();
+    }, 400);
+  }
+
+  removeToken(token: string): void {
+    const index = this.chipList.indexOf(token);
+    if (index === -1) {
+      return;
+    }
+
+    this.chipList.splice(index, 1);
+    this.addedChips.delete(token);
+    this.syncNodesSsas();
     this.changeDetectorRef.markForCheck();
   }
 
   clearTokens(): void {
-    this.nodesSsas.setValue('');
+    this.chipList.length = 0;
+    this.addedChips.clear();
+    this.syncNodesSsas();
     this.changeDetectorRef.markForCheck();
   }
 
@@ -150,7 +189,7 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
       const outputNodeSsas = this.getOutputNodeSsas();
       const result = importFromLines(fileText.split(/\r?\n/), outputNodeSsas);
 
-      this.nodesSsas.setValue('');
+      this.clearTokens();
       for (const ssa of result.resolved) {
         this.appendToken(ssa);
       }
@@ -175,10 +214,7 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
   }
 
   get nodeSsas(): string[] {
-    return this.nodesSsas.value
-      .split(/[,\n]/)
-      .map((token) => token.trim())
-      .filter((token) => token.length > 0);
+    return [...this.chipList];
   }
 
   get showDirection(): boolean {
@@ -194,6 +230,20 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     if (v === '' || v === 'all') return '-1';
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? String(Math.floor(n)) : '-1';
+  }
+
+  private syncNodesSsas(): void {
+    this.nodesSsas.setValue(this.chipList.join('\n'));
+  }
+
+  private scrollChipIntoView(token: string): void {
+    const chip = this.chipElements?.find(
+      (elementRef) => elementRef.nativeElement.dataset['token'] === token,
+    );
+    chip?.nativeElement.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+    });
   }
 
   private getOutputNodeSsas(): string[] {

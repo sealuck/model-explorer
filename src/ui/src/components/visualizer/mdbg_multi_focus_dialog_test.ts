@@ -16,16 +16,66 @@
  * ==============================================================================
  */
 
-import {TestBed} from '@angular/core/testing';
+import {
+  ComponentFixture,
+  fakeAsync,
+  TestBed,
+  tick,
+} from '@angular/core/testing';
+import {provideNoopAnimations} from '@angular/platform-browser/animations';
 
 import {ModelGraph, NodeType, OpNode} from './common/model_graph';
 import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
 
 describe('MdbgMultiFocusDialogComponent', () => {
-  beforeEach(() => {
-    TestBed.configureTestingModule({
+  let fixture: ComponentFixture<MdbgMultiFocusDialogComponent>;
+  let component: MdbgMultiFocusDialogComponent;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
       imports: [MdbgMultiFocusDialogComponent],
-    });
+      providers: [provideNoopAnimations()],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MdbgMultiFocusDialogComponent);
+    component = fixture.componentInstance;
+    component.modelGraph = {modelPath: '/tmp/model.mlir'} as ModelGraph;
+    component.paneId = 'pane-id';
+    fixture.detectChanges();
+  });
+
+  it('should_show_animation_class_on_new_chip', fakeAsync(() => {
+    component.appendToken('%0');
+    fixture.detectChanges();
+    tick();
+    fixture.detectChanges();
+
+    const chip = getChipElement();
+    expect(chip.classList.contains('chip-added')).toBeTrue();
+
+    tick(400);
+  }));
+
+  it('should_not_show_animation_class_on_duplicate_chip', fakeAsync(() => {
+    component.appendToken('%0');
+    fixture.detectChanges();
+    component.appendToken('%0');
+    fixture.detectChanges();
+    tick();
+    fixture.detectChanges();
+
+    const chip = getChipElement();
+    expect(chip.classList.contains('chip-added')).toBeFalse();
+
+    tick(400);
+  }));
+
+  it('should_wrap_chips_when_container_is_narrow', () => {
+    const container = fixture.nativeElement.querySelector(
+      '.chip-container',
+    ) as HTMLElement;
+
+    expect(getComputedStyle(container).flexWrap).toBe('wrap');
   });
 
   it('should_enumerate_mdbg_per_output_nodes_by_output_index', () => {
@@ -43,18 +93,50 @@ describe('MdbgMultiFocusDialogComponent', () => {
         ],
       } as unknown as OpNode;
     });
-    const fixture = TestBed.createComponent(MdbgMultiFocusDialogComponent);
-    fixture.componentInstance.modelGraph = {
+    component.modelGraph = {
       nodes: outputNodes,
       nodesById: Object.fromEntries(outputNodes.map((node) => [node.id, node])),
     } as ModelGraph;
 
     expect(
       (
-        fixture.componentInstance as unknown as {
+        component as unknown as {
           getOutputNodeSsas(): string[];
         }
       ).getOutputNodeSsas(),
     ).toEqual(['%val0', '%val1', '%val2']);
   });
+
+  it('should_replace_chip_list_on_file_import', () => {
+    const fileReader = {
+      result: '%1\n%2',
+      onload: null as FileReader['onload'],
+      onerror: null as FileReader['onerror'],
+      readAsText() {
+        this.onload?.call(
+          this as unknown as FileReader,
+          {} as ProgressEvent<FileReader>,
+        );
+      },
+    };
+    spyOn(window, 'FileReader').and.returnValue(
+      fileReader as unknown as FileReader,
+    );
+    spyOn(window, 'open');
+    component.appendToken('%0');
+
+    component.onFileSelected({
+      target: {
+        files: [new File(['%1\n%2'], 'ssas.txt')],
+        value: 'ssas.txt',
+      },
+    } as unknown as Event);
+
+    expect(component.nodeSsas).toEqual(['%1', '%2']);
+    expect(component.chipList).toEqual(['%1', '%2']);
+  });
+
+  function getChipElement(): HTMLElement {
+    return fixture.nativeElement.querySelector('.chip') as HTMLElement;
+  }
 });

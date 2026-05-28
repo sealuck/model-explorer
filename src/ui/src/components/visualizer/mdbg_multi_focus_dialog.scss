@@ -71,7 +71,6 @@ label {
   font-size: 11px;
 }
 
-textarea,
 input,
 select {
   width: 100%;
@@ -88,16 +87,89 @@ select {
   }
 }
 
-textarea {
-  min-height: 64px;
-  padding: 4px 6px;
-  resize: vertical;
-}
-
 input,
 select {
   height: 24px;
   padding: 2px 6px;
+}
+
+.chip-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  min-height: 32px;
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--me-outline-variant-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+  padding: 4px;
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-container-low-color);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 22px;
+  border: 1px solid var(--me-outline-variant-color);
+  border-radius: 4px;
+  box-sizing: border-box;
+  padding: 2px 4px 2px 6px;
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-container-color);
+  font-size: 11px;
+}
+
+.chip-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chip-remove {
+  align-self: center;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--me-on-surface-variant-color);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  line-height: 16px;
+}
+
+.chip-remove:hover {
+  color: var(--me-on-surface-color);
+  background-color: var(--me-surface-container-high-color);
+}
+
+.chip-added {
+  animation: chip-added-flash 400ms ease-out;
+}
+
+@keyframes chip-added-flash {
+  0% {
+    background-color: var(--me-primary-container-color);
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-2px);
+  }
+
+  50% {
+    transform: translateX(2px);
+  }
+
+  100% {
+    background-color: var(--me-surface-container-color);
+    transform: translateX(0);
+  }
 }
 
 button {
