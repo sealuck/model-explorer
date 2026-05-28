@@ -97,6 +97,7 @@ enum SectionLabel {
   LAYER_ATTRS = 'Layer attributes',
   ATTRIBUTES = 'Attributes',
   NODE_DATA_PROVIDERS = 'Node data providers',
+  BODY = 'Body',
   IDENTICAL_GROUPS = 'Identical groups',
   INPUTS = 'inputs',
   OUTPUTS = 'outputs',
@@ -142,6 +143,7 @@ interface InputItem {
 const MIN_WIDTH = 64;
 const SIDE_PANEL_WIDTH_ANIMATION_DURATION = 150;
 const DEFAULT_WIDTH = 370;
+const BODY_ATTR_KEYS = ['body', 'region', '__body__', 'body_str'];
 
 /** The info panel component that shows info for selected element. */
 @Component({
@@ -901,6 +903,22 @@ export class InfoPanel {
       }
     }
 
+    const body = this.getBodyAttrValue(opNode);
+    if (body) {
+      const bodySection: InfoSection = {
+        label: SectionLabel.BODY,
+        sectionType: 'op',
+        items: [],
+      };
+      bodySection.items.push({
+        section: bodySection,
+        label: SectionLabel.BODY,
+        value: body,
+        bigText: true,
+      });
+      this.sections.push(bodySection);
+    }
+
     // Section for node data providers.
     const runs = this.nodeDataProviderExtensionService.getRunsForModelGraph(
       this.curModelGraph,
@@ -1194,6 +1212,27 @@ export class InfoPanel {
     }
 
     return {metadataList, tensorTag};
+  }
+
+  private getBodyAttrValue(opNode: OpNode): string | undefined {
+    const attrs = opNode.attrs || {};
+    const attrKeysByLowerCase = new Map<string, string>();
+    for (const key of Object.keys(attrs)) {
+      attrKeysByLowerCase.set(key.toLowerCase(), key);
+    }
+
+    for (const bodyAttrKey of BODY_ATTR_KEYS) {
+      const key = attrKeysByLowerCase.get(bodyAttrKey);
+      if (!key) {
+        continue;
+      }
+      const value = attrs[key];
+      if (typeof value === 'string' && value.trim() !== '') {
+        return value;
+      }
+    }
+
+    return undefined;
   }
 
   private genInfoDataForSelectedGroupNode() {

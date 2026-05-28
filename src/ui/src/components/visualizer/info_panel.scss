@@ -289,6 +289,19 @@
     gap: 4px;
     margin-top: 10px;
     margin-bottom: 6px;
+
+    .body-content {
+      max-height: 200px;
+      overflow: auto;
+      margin: 0 12px 0 30px;
+      padding: 8px;
+      box-sizing: border-box;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: monospace;
+      color: var(--me-on-surface-color);
+      background-color: var(--me-surface-container-low-color);
+    }
   }
 
   .locator-icon-container {

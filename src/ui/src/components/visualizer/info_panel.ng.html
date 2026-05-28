@@ -34,75 +34,81 @@ limitations under the License.
           {{getSectionDisplayLabel(section.label)}}
         </div>
         <div class="items-container">
-          <table class="metadata-table info-attrs" [style.font-size.px]="fontSize ">
-            @for (item of section.items; track item.id || item.label) {
-              <tr [class.search-match]="isSearchMatchedAttrId(item.label)">
-                <td class="key"><hoverable-label [label]="item.label"></hoverable-label></td>
-                <td class="value">
-                  @if (item.specialValue) {
-                    @switch (item.specialValue.type) {
-                      @case (NodeAttributeValueType.NODE_IDS) {
-                        @for (nodeId of item.specialValue.nodeIds; track nodeId) {
-                          <div class="node-id-attribute"
-                              (click)="handleLocateNode(nodeId, $event)">
-                            {{nodeId}}
-                            <div class="locator-icon-container"
-                                [matTooltip]="locatorTooltip"
-                                matTooltipClass="multiline-tooltip-left"
-                                matTooltipPosition="right">
-                              <mat-icon class="locator-icon"
-                                  [style.font-size.px]="fontSize"
-                                  [style.height.px]="fontSize"
-                                  [style.width.px]="fontSize">
-                                my_location
-                              </mat-icon>
+          @if (section.label === SectionLabel.BODY) {
+            @for (item of section.items; track item.label) {
+              <pre class="body-content" [style.font-size.px]="fontSize">{{item.value}}</pre>
+            }
+          } @else {
+            <table class="metadata-table info-attrs" [style.font-size.px]="fontSize ">
+              @for (item of section.items; track item.id || item.label) {
+                <tr [class.search-match]="isSearchMatchedAttrId(item.label)">
+                  <td class="key"><hoverable-label [label]="item.label"></hoverable-label></td>
+                  <td class="value">
+                    @if (item.specialValue) {
+                      @switch (item.specialValue.type) {
+                        @case (NodeAttributeValueType.NODE_IDS) {
+                          @for (nodeId of item.specialValue.nodeIds; track nodeId) {
+                            <div class="node-id-attribute"
+                                (click)="handleLocateNode(nodeId, $event)">
+                              {{nodeId}}
+                              <div class="locator-icon-container"
+                                  [matTooltip]="locatorTooltip"
+                                  matTooltipClass="multiline-tooltip-left"
+                                  matTooltipPosition="right">
+                                <mat-icon class="locator-icon"
+                                    [style.font-size.px]="fontSize"
+                                    [style.height.px]="fontSize"
+                                    [style.width.px]="fontSize">
+                                  my_location
+                                </mat-icon>
+                              </div>
                             </div>
-                          </div>
+                          }
                         }
-                      }
-                      @case (NodeAttributeValueType.NODE_WITH_ATTRS) {
-                         @for (node of item.specialValue.nodes; track node.id) {
-                          <div class="node-id-attribute"
-                              (click)="handleLocateNode(node.id, $event)">
-                            {{node.id}}
-                            <div class="locator-icon-container"
-                                [matTooltip]="locatorTooltip"
-                                matTooltipClass="multiline-tooltip-left"
-                                matTooltipPosition="right">
-                              <mat-icon class="locator-icon"
-                                  [style.font-size.px]="fontSize"
-                                  [style.height.px]="fontSize"
-                                  [style.width.px]="fontSize">
-                                my_location
-                              </mat-icon>
+                        @case (NodeAttributeValueType.NODE_WITH_ATTRS) {
+                          @for (node of item.specialValue.nodes; track node.id) {
+                            <div class="node-id-attribute"
+                                (click)="handleLocateNode(node.id, $event)">
+                              {{node.id}}
+                              <div class="locator-icon-container"
+                                  [matTooltip]="locatorTooltip"
+                                  matTooltipClass="multiline-tooltip-left"
+                                  matTooltipPosition="right">
+                                <mat-icon class="locator-icon"
+                                    [style.font-size.px]="fontSize"
+                                    [style.height.px]="fontSize"
+                                    [style.width.px]="fontSize">
+                                  my_location
+                                </mat-icon>
+                              </div>
                             </div>
-                          </div>
-                          @for (attr of node.attrs; track attr.key) {
-                            <tr>
-                              <td class="key">
-                                <mat-icon class="bullet">circle</mat-icon>
-                                <span class="key-label">{{attr.key}}</span>
-                              </td>
-                              <td class="value">
-                                <hoverable-label [label]="attr.value"></hoverable-label>
-                              </td>
-                            </tr>
+                            @for (attr of node.attrs; track attr.key) {
+                              <tr>
+                                <td class="key">
+                                  <mat-icon class="bullet">circle</mat-icon>
+                                  <span class="key-label">{{attr.key}}</span>
+                                </td>
+                                <td class="value">
+                                  <hoverable-label [label]="attr.value"></hoverable-label>
+                                </td>
+                              </tr>
+                            }
                           }
                         }
                       }
+                    } @else {
+                      <expandable-info-text
+                          [text]="item.value" [type]="item.label"
+                          [bgColor]="item.bgColor || 'transparent'"
+                          [textColor]="item.textColor || onSurfaceColor"
+                          [initialExpanded]="expandInfoPanelValuesByDefault">
+                      </expandable-info-text>
                     }
-                  } @else {
-                    <expandable-info-text
-                        [text]="item.value" [type]="item.label"
-                        [bgColor]="item.bgColor || 'transparent'"
-                        [textColor]="item.textColor || onSurfaceColor"
-                        [initialExpanded]="expandInfoPanelValuesByDefault">
-                    </expandable-info-text>
-                  }
-                </td>
-              </tr>
-            }
-          </table>
+                  </td>
+                </tr>
+              }
+            </table>
+          }
         </div>
       </div>
     }
