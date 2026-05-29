@@ -62,6 +62,103 @@ observed_file_paths: set[str] = set()
 observed_dir_paths: set[str] = set()
 _observer_lock = threading.Lock()
 
+_VALID_FOCUS_MODES = {'single', 'union', 'inter-seed'}
+_VALID_CONTEXTS = {'none', 'upstream', 'downstream', 'both'}
+_VALID_CONTEXT_DEPTHS = {'0', '1', '2', 'all'}
+
+
+def _has_legacy_dataflow_params(args) -> bool:
+  return 'direction' in args or 'depth' in args
+
+
+def _legacy_dataflow_params_error() -> str:
+  return (
+      'Legacy query params direction/depth are not supported; use context and '
+      'context_depth.'
+  )
+
+
+def _validate_context_params(context: str, context_depth: str) -> str | None:
+  if context not in _VALID_CONTEXTS:
+    return (
+        'Invalid context; expected one of: none, upstream, downstream, both.'
+    )
+  if context_depth not in _VALID_CONTEXT_DEPTHS:
+    return 'Invalid context_depth; expected one of: 0, 1, 2, all.'
+  return None
+
+
+def _validate_focus_request(
+    seeds: list[str],
+    mode: str,
+    context: str,
+    context_depth: str,
+    args,
+    seed_param_name: str = 'seed',
+) -> str | None:
+  if _has_legacy_dataflow_params(args):
+    return _legacy_dataflow_params_error()
+  if not seeds:
+    return f'At least one {seed_param_name} query param is required.'
+  if mode not in _VALID_FOCUS_MODES:
+    return 'Invalid mode; expected one of: single, union, inter-seed.'
+  if mode == 'single' and len(seeds) != 1:
+    return 'Mode single requires exactly one seed.'
+  if mode in ('union', 'inter-seed') and len(seeds) < 2:
+    return f'Mode {mode} requires at least two seeds.'
+  return _validate_context_params(context, context_depth)
+
+
+def _parse_node_data_paths(node_data_paths: str) -> list[str]:
+  paths = []
+  for chunk in node_data_paths.split(','):
+    paths += [part.strip() for part in chunk.split(':') if part.strip()]
+  return paths
+
+
+def _attr_matches_any_ssa(value: str, seed_ssas: set[str]) -> bool:
+  parts = [part.strip() for part in value.split(',') if part.strip()]
+  return any(part in seed_ssas for part in parts)
+
+
+def _build_seed_roles(data: dict, node_ssas: str) -> dict:
+  seed_ssas = set()
+  seed_node_ids = set()
+  for token in [ssa.strip() for ssa in node_ssas.split(',') if ssa.strip()]:
+    if token.startswith('nodeId:'):
+      seed_node_ids.add(token[len('nodeId:'):])
+    else:
+      seed_ssas.add(token)
+  seed_roles = {}
+  for graph in data.get('graphs', []):
+    graph_id = graph.get('id', '')
+    results = {}
+    for node in graph.get('nodes', []):
+      if node.get('id', '') in seed_node_ids:
+        results[node.get('id', '')] = {'bgColor': '#4e9af1'}
+        continue
+      for attr in node.get('attrs', []):
+        if attr.get('key') != 'mdbg_source_ssa':
+          continue
+        if _attr_matches_any_ssa(attr.get('value', ''), seed_ssas):
+          results[node.get('id', '')] = {'bgColor': '#4e9af1'}
+          break
+    if results:
+      seed_roles[graph_id] = {
+          'name': 'Seed roles',
+          'results': results,
+      }
+  return seed_roles
+
+
+def _resolve_mdbg_graph_path(graph_path: str) -> str:
+  # Resolve .mlir path to the cached graph JSON from the earlier translate.
+  if graph_path.endswith('.mlir'):
+    cached = get_cached_graph_json_path(graph_path)
+    if cached:
+      return cached
+  return graph_path
+
 
 def _print_loaded_extensions(type: str, label: str, all_extensions: list[dict]):
   filtered_extensions = [ext for ext in all_extensions if ext['type'] == type]
@@ -393,8 +490,18 @@ def start(
     graph_path = request.args.get('graph_path', '')
     node_id = request.args.get('node_id', '')
     node_ssa = request.args.get('node_ssa', '')
-    direction = request.args.get('direction', 'both')
-    depth = request.args.get('depth', '-1')
+    context = request.args.get('context', 'none')
+    context_depth = request.args.get('context_depth', 'all')
+
+    if _has_legacy_dataflow_params(request.args):
+      resp = _make_json_response({'error': _legacy_dataflow_params_error()})
+      resp.status_code = 400
+      return resp
+    validation_error = _validate_context_params(context, context_depth)
+    if validation_error:
+      resp = _make_json_response({'error': validation_error})
+      resp.status_code = 400
+      return resp
 
     mdbg = _find_mdbg()
     if not mdbg:
@@ -402,11 +509,7 @@ def start(
           {'error': 'mdbg binary not found; set MDBG_BIN or build mdbg'}
       )
 
-    # Resolve .mlir path to the cached graph JSON from the earlier translate.
-    if graph_path.endswith('.mlir'):
-      cached = get_cached_graph_json_path(graph_path)
-      if cached:
-        graph_path = cached
+    graph_path = _resolve_mdbg_graph_path(graph_path)
 
     args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
     if node_ssa:
@@ -417,7 +520,7 @@ def start(
       return _make_json_response(
           {'error': 'source SSA is required'}
       )
-    args += ['--direction', direction, '--depth', depth]
+    args += ['--context', context, '--context-depth', context_depth]
 
     try:
       result = subprocess.run(args, capture_output=True, text=True, timeout=30)
@@ -429,20 +532,12 @@ def start(
     except Exception as err:
       return _make_json_response({'error': str(err)})
 
-  def _resolve_mdbg_graph_path(graph_path: str) -> str:
-    # Resolve .mlir path to the cached graph JSON from the earlier translate.
-    if graph_path.endswith('.mlir'):
-      cached = get_cached_graph_json_path(graph_path)
-      if cached:
-        return cached
-    return graph_path
-
   def _run_multi_dataflow(
       graph_path: str,
       node_ssas: str,
       mode: str,
-      direction: str,
-      depth: str,
+      context: str,
+      context_depth: str,
   ):
     mdbg = _find_mdbg()
     if not mdbg:
@@ -460,10 +555,10 @@ def start(
         node_ssas,
         '--mode',
         mode,
-        '--direction',
-        direction,
-        '--depth',
-        depth,
+        '--context',
+        context,
+        '--context-depth',
+        context_depth,
         '-o',
         '-',
     ]
@@ -478,104 +573,108 @@ def start(
     except Exception as err:
       return None, str(err)
 
-  def _attr_matches_any_ssa(value: str, seed_ssas: set[str]) -> bool:
-    parts = [part.strip() for part in value.split(',') if part.strip()]
-    return any(part in seed_ssas for part in parts)
-
-  def _build_seed_roles(data: dict, node_ssas: str) -> dict:
-    seed_ssas = set()
-    seed_node_ids = set()
-    for token in [ssa.strip() for ssa in node_ssas.split(',') if ssa.strip()]:
-      if token.startswith('nodeId:'):
-        seed_node_ids.add(token[len('nodeId:'):])
-      else:
-        seed_ssas.add(token)
-    seed_roles = {}
-    for graph in data.get('graphs', []):
-      graph_id = graph.get('id', '')
-      results = {}
-      for node in graph.get('nodes', []):
-        if node.get('id', '') in seed_node_ids:
-          results[node.get('id', '')] = {'bgColor': '#4e9af1'}
-          continue
-        for attr in node.get('attrs', []):
-          if attr.get('key') != 'mdbg_source_ssa':
-            continue
-          if _attr_matches_any_ssa(attr.get('value', ''), seed_ssas):
-            results[node.get('id', '')] = {'bgColor': '#4e9af1'}
-            break
-      if results:
-        seed_roles[graph_id] = {
-            'name': 'Seed roles',
-            'results': results,
-        }
-    return seed_roles
-
   @app.route('/api/v1/multi-dataflow')
   def multi_dataflow():
     """Extract dataflow subgraph centered on multiple nodes."""
     graph_path = request.args.get('graph_path', '')
     node_ssas = request.args.get('node_ssas', '')
     mode = request.args.get('mode', 'union')
-    direction = request.args.get('direction', 'both')
-    depth = request.args.get('depth', '-1')
+    context = request.args.get('context', 'none')
+    context_depth = request.args.get('context_depth', 'all')
+
+    if _has_legacy_dataflow_params(request.args):
+      resp = _make_json_response({'error': _legacy_dataflow_params_error()})
+      resp.status_code = 400
+      return resp
+    validation_error = _validate_focus_request(
+        [seed.strip() for seed in node_ssas.split(',') if seed.strip()],
+        mode,
+        context,
+        context_depth,
+        request.args,
+        seed_param_name='node_ssas',
+    )
+    if validation_error:
+      resp = _make_json_response({'error': validation_error})
+      resp.status_code = 400
+      return resp
 
     result, error = _run_multi_dataflow(
-        graph_path, node_ssas, mode, direction, depth
+        graph_path, node_ssas, mode, context, context_depth
     )
     if error:
       return _make_json_response({'error': error})
     return Response(result.stdout, mimetype='application/json')
 
+  def _run_focus_dataflow(
+      graph_path: str,
+      seeds: list[str],
+      mode: str,
+      context: str,
+      context_depth: str,
+  ):
+    mdbg = _find_mdbg()
+    if not mdbg:
+      return None, 'mdbg binary not found; set MDBG_BIN or build mdbg'
+
+    graph_path = _resolve_mdbg_graph_path(graph_path)
+    args = [
+        mdbg,
+        'dataflow',
+        '--graph',
+        graph_path,
+        '--mode',
+        mode,
+        '--context',
+        context,
+        '--context-depth',
+        context_depth,
+        '-o',
+        '-',
+    ]
+    for seed in seeds:
+      args += ['--seed', seed]
+
+    try:
+      result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+      if result.returncode != 0:
+        return None, result.stderr.strip()
+      return result, None
+    except subprocess.TimeoutExpired:
+      return None, 'dataflow extraction timed out'
+    except Exception as err:
+      return None, str(err)
+
   @app.route('/focus')
   def focus():
     """Extract focused dataflow subgraph and open in new tab."""
     graph_path = request.args.get('graph_path', '')
-    node_id = request.args.get('node_id', '')
-    node_ssa = request.args.get('node_ssa', '')
-    direction = request.args.get('direction', 'both')
-    depth = request.args.get('depth', '-1')
+    seeds = [seed.strip() for seed in request.args.getlist('seed')]
+    seeds = [seed for seed in seeds if seed]
+    mode = request.args.get('mode', '')
+    context = request.args.get('context', 'none')
+    context_depth = request.args.get('context_depth', 'all')
     node_data_paths = request.args.get('node_data_paths', '')
 
-    mdbg = _find_mdbg()
-    if not mdbg:
-      return '<h3>Error: mdbg binary not found</h3>'
+    validation_error = _validate_focus_request(
+        seeds, mode, context, context_depth, request.args
+    )
+    if validation_error:
+      return f'<h3>Error: {validation_error}</h3>', 400
 
-    # Resolve .mlir path to the cached graph JSON from the earlier translate.
-    if graph_path.endswith('.mlir'):
-      cached = get_cached_graph_json_path(graph_path)
-      if cached:
-        graph_path = cached
-
-    args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
-    if node_ssa:
-      args += ['--node', node_ssa]
-    elif node_id:
-      args += ['--node-id', node_id]
-    else:
-      return '<h3>Error: source SSA is required</h3>'
-    args += ['--direction', direction, '--depth', depth]
-
-    try:
-      result = subprocess.run(args, capture_output=True, text=True, timeout=30)
-    except subprocess.TimeoutExpired:
-      return '<h3>Error: dataflow extraction timed out</h3>'
-    except Exception as err:
-      return f'<h3>Error: {err}</h3>'
-
-    if result.returncode != 0:
-      return f'<h3>Error: {result.stderr}</h3>'
+    result, error = _run_focus_dataflow(
+        graph_path, seeds, mode, context, context_depth
+    )
+    if error:
+      return f'<h3>Error: {error}</h3>'
 
     from urllib.parse import quote
 
-    # Mark the focus node with the same seed-role highlight that multi-focus
-    # applies; single-focus and multi-focus should look identical for the seed.
     try:
       subgraph_data = json.loads(result.stdout)
-      seed_token = node_ssa if node_ssa else f'nodeId:{node_id}'
-      seed_roles = _build_seed_roles(subgraph_data, seed_token)
-    except Exception:
-      seed_roles = {}
+      seed_roles = _build_seed_roles(subgraph_data, ','.join(seeds))
+    except Exception as err:
+      return f'<h3>Error: {err}</h3>'
 
     # Write focused graph (and seed roles) to a temp dir so Model Explorer can
     # load them together.
@@ -591,54 +690,11 @@ def start(
         f.write(json.dumps(seed_roles, indent=2))
       paths.append(seed_roles_path)
     if node_data_paths:
-      paths += [p.strip() for p in node_data_paths.split(',') if p.strip()]
+      paths += _parse_node_data_paths(node_data_paths)
 
     data = {'models': [{'url': graph_tmp_path, 'adapterId': 'mdbg_mlir'}]}
     if paths:
       data['nodeData'] = paths
-    return redirect(f'/?data={quote(json.dumps(data))}')
-
-  @app.route('/multi-focus')
-  def multi_focus():
-    """Extract focused multi-node dataflow subgraph and open in new tab."""
-    graph_path = request.args.get('graph_path', '')
-    node_ssas = request.args.get('node_ssas', '')
-    mode = request.args.get('mode', 'union')
-    direction = request.args.get('direction', 'both')
-    depth = request.args.get('depth', '-1')
-    node_data_paths = request.args.get('node_data_paths', '')
-
-    result, error = _run_multi_dataflow(
-        graph_path, node_ssas, mode, direction, depth
-    )
-    if error:
-      return f'<h3>Error: {error}</h3>'
-
-    try:
-      subgraph = json.loads(result.stdout)
-      seed_roles = _build_seed_roles(subgraph, node_ssas)
-    except Exception as err:
-      return f'<h3>Error: {err}</h3>'
-
-    from urllib.parse import quote
-
-    # Write focused graph and seed roles to temp files so Model Explorer can
-    # load them.
-    tmp_dir = tempfile.mkdtemp(prefix='mdbg_multi_focus_')
-    graph_tmp_path = os.path.join(tmp_dir, 'subgraph.json')
-    with open(graph_tmp_path, 'w') as f:
-      f.write(result.stdout)
-    seed_roles_path = os.path.join(tmp_dir, 'seed_roles.json')
-    with open(seed_roles_path, 'w') as f:
-      f.write(json.dumps(seed_roles, indent=2))
-
-    paths = [seed_roles_path]
-    if node_data_paths:
-      paths += [p.strip() for p in node_data_paths.split(':') if p.strip()]
-    data = {
-        'models': [{'url': graph_tmp_path, 'adapterId': 'mdbg_mlir'}],
-        'nodeData': paths,
-    }
     return redirect(f'/?data={quote(json.dumps(data))}')
 
   @app.route('/api/v1/load_node_data')
