@@ -107,11 +107,6 @@
         border: 1px solid transparent;
       }
 
-      &.focus-dataflow {
-        font-size: 19px;
-        width: 19px;
-        height: 19px;
-      }
     }
 
     .vertical-divider {
@@ -131,21 +126,6 @@
       background: var(--me-surface-container-low-color);
       font-size: 11px;
       text-align: center;
-      outline: none;
-
-      &:focus {
-        border-color: var(--me-primary-color);
-      }
-    }
-
-    .focus-direction-select {
-      height: 22px;
-      border: 1px solid var(--me-outline-variant-color);
-      border-radius: 4px;
-      box-sizing: border-box;
-      color: var(--me-on-surface-color);
-      background: var(--me-surface-container-low-color);
-      font-size: 11px;
       outline: none;
 
       &:focus {

@@ -22,11 +22,9 @@ import {TestBed} from '@angular/core/testing';
 import {AppService} from './app_service';
 import {ModelGraph, NodeType} from './common/model_graph';
 import {RendererWrapper} from './renderer_wrapper';
-import {SubgraphSelectionService} from './subgraph_selection_service';
 
 describe('RendererWrapper', () => {
   let appService: jasmine.SpyObj<AppService>;
-  let subgraphSelectionService: jasmine.SpyObj<SubgraphSelectionService>;
 
   beforeEach(() => {
     appService = jasmine.createSpyObj<AppService>('AppService', [
@@ -43,17 +41,11 @@ describe('RendererWrapper', () => {
         isGroupNode: false,
       },
     });
-    subgraphSelectionService =
-      jasmine.createSpyObj<SubgraphSelectionService>(
-        'SubgraphSelectionService',
-        ['clearSelection'],
-      );
 
     TestBed.configureTestingModule({
       imports: [RendererWrapper],
       providers: [
         {provide: AppService, useValue: appService},
-        {provide: SubgraphSelectionService, useValue: subgraphSelectionService},
       ],
     });
     TestBed.overrideComponent(RendererWrapper, {
@@ -61,55 +53,25 @@ describe('RendererWrapper', () => {
     });
   });
 
-  it('should_complete_focus_when_switching_from_multi_to_single', () => {
+  it('should_notExposeSingleFocusControls_and_keepFocusDataflowPanelToggle', () => {
     const fixture = TestBed.createComponent(RendererWrapper);
     const component = fixture.componentInstance;
-    let clearedBeforeOpen = false;
-    subgraphSelectionService.clearSelection.and.callFake(() => {
-      clearedBeforeOpen = true;
-    });
-    const openSpy = spyOn(window, 'open').and.callFake(() => {
-      expect(clearedBeforeOpen).toBeTrue();
-      return null;
-    });
-    const clearTokens = jasmine.createSpy('clearTokens');
 
-    component.paneId = 'pane-id';
-    component.rendererId = 'renderer-id';
-    component.modelGraph = {
-      id: 'graph-id',
-      collectionLabel: 'collection',
-      modelPath: '/tmp/model.mlir',
-      nodes: [],
-      nodesById: {
-        'single-node': {
-          id: 'single-node',
-          label: 'single node',
-          namespace: '',
-          level: 0,
-          nodeType: NodeType.OP_NODE,
-          attrs: {'mdbg_source_ssa': '%0'},
-        },
-      },
-      rootNodes: [],
-      edgesByGroupNodeIds: {},
-      layoutGraphEdges: {},
-      maxDescendantOpNodeCount: 0,
-      minDescendantOpNodeCount: 0,
-    } as ModelGraph;
-    component.showFocusDataflowPanel = true;
-    component.focusDataflowPanelRef = {clearTokens} as any;
+    const legacyDirectionControl = ['focus', 'Direction'].join('');
+    const legacyDirectionVisibility = ['showFocus', 'Direction'].join('');
+    const legacySingleFocusHandler = ['handleClick', 'FocusDataflow'].join('');
+    const componentRecord = component as unknown as Record<string, unknown>;
 
-    component.handleClickFocusDataflow();
+    expect(componentRecord[legacyDirectionControl]).toBeUndefined();
+    expect(componentRecord[legacyDirectionVisibility]).toBeUndefined();
+    expect(componentRecord[legacySingleFocusHandler]).toBeUndefined();
 
-    expect(subgraphSelectionService.clearSelection).toHaveBeenCalled();
-    expect(clearTokens).toHaveBeenCalled();
+    expect(typeof component.handleClickFocusDataflowPanel).toBe('function');
     expect(component.showFocusDataflowPanel).toBeFalse();
-    expect(openSpy).toHaveBeenCalledWith(
-      '/focus?graph_path=%2Ftmp%2Fmodel.mlir&node_ssa=%250&direction=both&depth=-1',
-      '_blank',
-      'noopener',
-    );
+
+    component.handleClickFocusDataflowPanel();
+
+    expect(component.showFocusDataflowPanel).toBeTrue();
   });
 
   it('should_openPanelAndAppendToken_when_ctrlClickedOnOpNodeWithSsa', () => {

@@ -42,13 +42,12 @@ import {
   SelectedNodeInfo,
   SubgraphBreadcrumbItem,
 } from './common/types';
-import {isGroupNode, isOpNode, isOutputsNode} from './common/utils';
+import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
 import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
 import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
-import {SubgraphSelectionService} from './subgraph_selection_service';
 import {ViewOnNode} from './view_on_node';
 import {WebglRenderer} from './webgl_renderer';
 
@@ -101,9 +100,6 @@ export class RendererWrapper {
   disableDownloadPngHelpPopup = false;
   transparentPngBackground = new FormControl<boolean>(false);
   traceDepth = new FormControl<string>('all');
-  readonly focusDirection = new FormControl<string>('both', {
-    nonNullable: true,
-  });
   showFocusDataflowPanel = false;
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
@@ -111,7 +107,6 @@ export class RendererWrapper {
   constructor(
     private readonly appService: AppService,
     private readonly changeDetectorRef: ChangeDetectorRef,
-    private readonly subgraphSelectionService: SubgraphSelectionService,
   ) {
     effect(() => {
       const pane = this.appService.getPaneById(this.paneId);
@@ -176,64 +171,8 @@ export class RendererWrapper {
     this.webglRenderer?.toggleIoTrace();
   }
 
-  handleClickFocusDataflow() {
-    const selectedNodeId = this.appService.getPaneById(this.paneId)
-      ?.selectedNodeInfo?.nodeId;
-    if (!selectedNodeId || !this.modelGraph.modelPath) {
-      return;
-    }
-    this.clearFocusDataflowPanelState();
-
-    const selectedNode = this.modelGraph.nodesById[selectedNodeId];
-    const isFunctionOutput =
-      isOpNode(selectedNode) &&
-      selectedNode.attrs?.['mdbg_kind'] === 'function_output';
-    const sourceSSA =
-      isOpNode(selectedNode) &&
-      typeof selectedNode.attrs?.['mdbg_source_ssa'] === 'string' &&
-      selectedNode.attrs['mdbg_source_ssa'] !== ''
-        ? (selectedNode.attrs['mdbg_source_ssa'] as string)
-        : undefined;
-
-    const params = new URLSearchParams();
-    params.set('graph_path', this.modelGraph.modelPath);
-    if (isFunctionOutput) {
-      params.set('node_id', selectedNode.id);
-    } else if (sourceSSA) {
-      params.set('node_ssa', sourceSSA);
-    } else {
-      params.set('node_id', selectedNode.id);
-    }
-    params.set('direction', this.focusDirection.value);
-    params.set('depth', `${this.parseTraceDepth() ?? -1}`);
-    const retainedOutputNodeIds = this.getGraphOutputNodeIds();
-    if (retainedOutputNodeIds.length > 0) {
-      params.set('retained_output_node_ids', retainedOutputNodeIds.join(','));
-    }
-
-    const nodeDataPaths = this.getNodeDataPathsFromUrl();
-    if (nodeDataPaths.length > 0) {
-      params.set('node_data_paths', nodeDataPaths.join(','));
-    }
-
-    window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
-  }
-
   handleClickFocusDataflowPanel() {
     this.showFocusDataflowPanel = !this.showFocusDataflowPanel;
-  }
-
-  private clearFocusDataflowPanelState(): void {
-    this.subgraphSelectionService.clearSelection();
-    this.focusDataflowPanelRef?.clearTokens();
-    this.showFocusDataflowPanel = false;
-    this.changeDetectorRef.markForCheck();
-  }
-
-  private getGraphOutputNodeIds(): string[] {
-    return this.modelGraph.nodes
-      .filter((node) => isOutputsNode(node))
-      .map((node) => node.id);
   }
 
   handleNodeCtrlClicked(nodeId: string) {
@@ -282,12 +221,6 @@ export class RendererWrapper {
     return this.webglRenderer?.getActiveSelectedNodeInfo();
   }
 
-  get canFocusDataflow(): boolean {
-    const selectedNodeId = this.appService.getPaneById(this.paneId)
-      ?.selectedNodeInfo?.nodeId;
-    return !!selectedNodeId && !!this.modelGraph.modelPath;
-  }
-
   /** Whether to show the search bar. */
   get showSearchBar(): boolean {
     return !this.inPopup;
@@ -309,10 +242,6 @@ export class RendererWrapper {
   }
 
   get showDownloadPng(): boolean {
-    return !this.inPopup;
-  }
-
-  get showFocusDirection(): boolean {
     return !this.inPopup;
   }
 
@@ -345,24 +274,5 @@ export class RendererWrapper {
 
   get isTestMode(): boolean {
     return this.appService.testMode;
-  }
-
-  private getNodeDataPathsFromUrl(): string[] {
-    const data = new URLSearchParams(window.location.search).get('data');
-    if (!data) {
-      return [];
-    }
-
-    try {
-      const parsed = JSON.parse(data) as {nodeData?: unknown};
-      if (!Array.isArray(parsed.nodeData)) {
-        return [];
-      }
-      return parsed.nodeData.filter((item): item is string => {
-        return typeof item === 'string' && item.length > 0;
-      });
-    } catch {
-      return [];
-    }
   }
 }

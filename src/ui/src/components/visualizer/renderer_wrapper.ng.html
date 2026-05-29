@@ -148,31 +148,6 @@ limitations under the License.
           title="Trace IO depth. Use all or empty for all ancestors and descendants; use 0, 1, 2... for N hops."
           [formControl]="traceDepth"
           (input)="handleTraceDepthChange()">
-      @if (showFocusDirection) {
-        <select class="focus-direction-select" [formControl]="focusDirection">
-          <option value="both">both</option>
-          <option value="backward">upstream</option>
-          <option value="forward">downstream</option>
-        </select>
-      }
-      <div class="mat-icon-container focus-dataflow"
-          [bubble]="helpFocusDataflow"
-          [overlaySize]="helpPopupSize"
-          [hoverDelayMs]="10"
-          [class.disable]="!canFocusDataflow"
-          (click)="handleClickFocusDataflow()">
-        <mat-icon class="toolbar-icon focus-dataflow">
-          account_tree
-        </mat-icon>
-      </div>
-      <ng-template #helpFocusDataflow>
-        <div class="model-explorer-help-popup">
-          Focus dataflow
-          <div class="description">
-            Open selected node's dataflow subgraph using the trace depth field
-          </div>
-        </div>
-      </ng-template>
       <div class="mat-icon-container focus-dataflow-panel"
           [bubble]="helpFocusDataflowPanel"
           [overlaySize]="helpPopupSize"
