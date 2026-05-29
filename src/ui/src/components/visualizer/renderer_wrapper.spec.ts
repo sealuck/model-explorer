@@ -16,6 +16,7 @@
  * ==============================================================================
  */
 
+import {ChangeDetectorRef} from '@angular/core';
 import {TestBed} from '@angular/core/testing';
 
 import {AppService} from './app_service';
@@ -110,4 +111,117 @@ describe('RendererWrapper', () => {
       'noopener',
     );
   });
+
+  it('should_openPanelAndAppendToken_when_ctrlClickedOnOpNodeWithSsa', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-node': {
+        id: 'op-node',
+        label: 'op node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {
+          'mdbg_kind': 'operation',
+          'mdbg_source_ssa': '%foo',
+        },
+      },
+    });
+    component.showFocusDataflowPanel = false;
+    spyOn(
+      (component as unknown as {changeDetectorRef: ChangeDetectorRef})
+        .changeDetectorRef,
+      'detectChanges',
+    ).and.callFake(() => {
+      component.focusDataflowPanelRef = {appendToken} as any;
+    });
+
+    component.handleNodeCtrlClicked('op-node');
+
+    expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(appendToken).toHaveBeenCalledOnceWith('%foo');
+  });
+
+  it('should_appendNodeIdToken_when_ctrlClickedOnFunctionOutputNode', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'output-node': {
+        id: 'output-node',
+        label: 'output node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {
+          'mdbg_kind': 'function_output',
+          'mdbg_source_ssa': '%ignored',
+        },
+      },
+    });
+    component.showFocusDataflowPanel = true;
+    component.focusDataflowPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('output-node');
+
+    expect(appendToken).toHaveBeenCalledOnceWith('nodeId:output-node');
+  });
+
+  it('should_notDuplicateChip_when_ctrlClickedTwiceForSameNode', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-node': {
+        id: 'op-node',
+        label: 'op node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {'mdbg_source_ssa': '%foo'},
+      },
+    });
+    component.showFocusDataflowPanel = true;
+    component.focusDataflowPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('op-node');
+    component.handleNodeCtrlClicked('op-node');
+
+    expect(appendToken).toHaveBeenCalledTimes(2);
+    expect(appendToken).toHaveBeenCalledWith('%foo');
+  });
+
+  it('should_notOpenPanelOrAppendToken_when_nodeIdIsUnknown', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({});
+    component.showFocusDataflowPanel = false;
+    component.focusDataflowPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('missing-node');
+
+    expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(appendToken).not.toHaveBeenCalled();
+  });
 });
+
+function createModelGraph(nodesById: ModelGraph['nodesById']): ModelGraph {
+  return {
+    id: 'graph-id',
+    collectionLabel: 'collection',
+    nodes: Object.values(nodesById),
+    nodesById,
+    rootNodes: [],
+    edgesByGroupNodeIds: {},
+    layoutGraphEdges: {},
+    maxDescendantOpNodeCount: 0,
+    minDescendantOpNodeCount: 0,
+  } as ModelGraph;
+}
