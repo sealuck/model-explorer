@@ -38,18 +38,19 @@ limitations under the License.
     <label class="seed-chip-list-section">
       Seeds
       <div class="chip-container">
-        @for (chip of chipList; track chip) {
+        @for (chip of chipList; track chip.token) {
           <span
               #chipElement
               class="chip"
-              [class.chip-added]="addedChips.has(chip)"
-              [attr.data-token]="chip">
-            <span class="chip-label">{{chip}}</span>
+              [class.chip-added]="addedChips.has(chip.token)"
+              [attr.data-token]="chip.token"
+              [attr.title]="chip.token">
+            <span class="chip-label">{{chip.label}}</span>
             <button
                 class="chip-remove"
                 type="button"
                 aria-label="Remove seed"
-                (click)="removeToken(chip)">
+                (click)="removeToken(chip.token)">
               &times;
             </button>
           </span>

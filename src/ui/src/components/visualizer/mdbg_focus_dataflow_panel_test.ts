@@ -133,7 +133,62 @@ describe('MdbgFocusDataflowPanelComponent', () => {
     } as unknown as Event);
 
     expect(component.nodeSsas).toEqual(['%1', '%2']);
-    expect(component.chipList).toEqual(['%1', '%2']);
+    expect(component.chipList).toEqual([
+      {token: '%1', label: '%1'},
+      {token: '%2', label: '%2'},
+    ]);
+  });
+
+  it('should_render_output_seed_chip_label_instead_of_token', () => {
+    component.appendToken('nodeId:long-generated-output-node-id', 'Outputs #1');
+    fixture.detectChanges();
+
+    expect(getChipLabelText()).toBe('Outputs #1');
+    expect(getChipLabelText()).not.toBe('nodeId:long-generated-output-node-id');
+  });
+
+  it('should_build_focus_url_with_output_seed_token', () => {
+    const openSpy = spyOn(window, 'open');
+    component.appendToken('nodeId:long-generated-output-node-id', 'Outputs #1');
+
+    component.handleClickFocus();
+
+    const params = getFocusUrlParams(
+      openSpy.calls.mostRecent().args[0] as string,
+    );
+    expect(params.getAll('seed')).toEqual([
+      'nodeId:long-generated-output-node-id',
+    ]);
+  });
+
+  it('should_number_output_seed_labels_for_same_node_label', () => {
+    const firstLabel = component.getNextOutputSeedLabel('Outputs');
+    component.appendToken('nodeId:first-output', firstLabel);
+    const secondLabel = component.getNextOutputSeedLabel('Outputs');
+    component.appendToken('nodeId:second-output', secondLabel);
+
+    expect(component.chipList.map((chip) => chip.label)).toEqual([
+      'Outputs #1',
+      'Outputs #2',
+    ]);
+  });
+
+  it('should_deduplicate_output_seed_chips_by_token', () => {
+    component.appendToken('nodeId:output-node', 'Outputs #1');
+    component.appendToken('nodeId:output-node', 'Outputs #2');
+
+    expect(component.chipList).toEqual([
+      {token: 'nodeId:output-node', label: 'Outputs #1'},
+    ]);
+  });
+
+  it('should_expose_full_seed_token_in_chip_title', () => {
+    component.appendToken('nodeId:long-generated-output-node-id', 'Outputs #1');
+    fixture.detectChanges();
+
+    expect(getChipElement().getAttribute('title')).toBe(
+      'nodeId:long-generated-output-node-id',
+    );
   });
 
   it('should_render_import_seeds_above_seed_chip_list', () => {
@@ -243,5 +298,12 @@ describe('MdbgFocusDataflowPanelComponent', () => {
 
   function getChipElement(): HTMLElement {
     return fixture.nativeElement.querySelector('.chip') as HTMLElement;
+  }
+
+  function getChipLabelText(): string {
+    const label = fixture.nativeElement.querySelector(
+      '.chip-label',
+    ) as HTMLElement;
+    return label.textContent?.trim() ?? '';
   }
 });

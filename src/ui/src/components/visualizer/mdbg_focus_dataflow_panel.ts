@@ -40,6 +40,11 @@ import {
 
 const SSA_ATTR_KEY = 'mdbg_source_ssa';
 
+export interface SeedChip {
+  token: string;
+  label: string;
+}
+
 function readAttr(node: ModelNode, key: string): string | undefined {
   if (!isOpNode(node) || node.attrs == null) {
     return undefined;
@@ -91,7 +96,7 @@ export class MdbgFocusDataflowPanelComponent {
   readonly context = new FormControl<string>('both', {nonNullable: true});
   readonly contextDepth = new FormControl<string>('all', {nonNullable: true});
 
-  readonly chipList: string[] = [];
+  readonly chipList: SeedChip[] = [];
   readonly addedChips = new Set<string>();
   importWarnings: SsaFileImportUnresolvedLine[] = [];
 
@@ -132,18 +137,21 @@ export class MdbgFocusDataflowPanelComponent {
     };
   }
 
-  appendToken(token: string): void {
+  appendToken(token: string, label?: string): void {
     const normalizedToken = token.trim();
     if (normalizedToken === '') {
       return;
     }
-    if (this.chipList.includes(normalizedToken)) {
+    if (this.chipList.some((chip) => chip.token === normalizedToken)) {
       this.addedChips.delete(normalizedToken);
       this.changeDetectorRef.markForCheck();
       return;
     }
 
-    this.chipList.push(normalizedToken);
+    this.chipList.push({
+      token: normalizedToken,
+      label: label ?? normalizedToken,
+    });
     this.syncNodesSsas();
     this.addedChips.add(normalizedToken);
     this.changeDetectorRef.markForCheck();
@@ -158,7 +166,7 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   removeToken(token: string): void {
-    const index = this.chipList.indexOf(token);
+    const index = this.chipList.findIndex((chip) => chip.token === token);
     if (index === -1) {
       return;
     }
@@ -174,6 +182,13 @@ export class MdbgFocusDataflowPanelComponent {
     this.addedChips.clear();
     this.syncNodesSsas();
     this.changeDetectorRef.markForCheck();
+  }
+
+  getNextOutputSeedLabel(nodeLabel: string): string {
+    const existingChipCount = this.chipList.filter((chip) =>
+      chip.label.startsWith(`${nodeLabel} #`),
+    ).length;
+    return `${nodeLabel} #${existingChipCount + 1}`;
   }
 
   onFileSelected(event: Event): void {
@@ -214,7 +229,7 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   get nodeSsas(): string[] {
-    return [...this.chipList];
+    return this.chipList.map((chip) => chip.token);
   }
 
   get canFocus(): boolean {
@@ -222,7 +237,7 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   private syncNodesSsas(): void {
-    this.nodesSsas.setValue(this.chipList.join('\n'));
+    this.nodesSsas.setValue(this.nodeSsas.join('\n'));
   }
 
   private scrollChipIntoView(token: string): void {

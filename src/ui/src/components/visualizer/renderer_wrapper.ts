@@ -182,7 +182,8 @@ export class RendererWrapper {
     }
 
     let token = `nodeId:${node.id}`;
-    if (node.attrs?.['mdbg_kind'] !== 'function_output') {
+    const isFunctionOutput = node.attrs?.['mdbg_kind'] === 'function_output';
+    if (!isFunctionOutput) {
       const sourceSsa = node.attrs?.['mdbg_source_ssa'];
       if (typeof sourceSsa === 'string' && sourceSsa !== '') {
         token = sourceSsa;
@@ -193,7 +194,14 @@ export class RendererWrapper {
       this.showFocusDataflowPanel = true;
       this.changeDetectorRef.detectChanges();
     }
-    this.focusDataflowPanelRef?.appendToken(token);
+    const label = isFunctionOutput
+      ? this.focusDataflowPanelRef?.getNextOutputSeedLabel?.(node.label)
+      : undefined;
+    if (label === undefined) {
+      this.focusDataflowPanelRef?.appendToken(token);
+    } else {
+      this.focusDataflowPanelRef?.appendToken(token, label);
+    }
   }
 
   handleClickToggleTransparentPngBackground(event: MouseEvent) {
