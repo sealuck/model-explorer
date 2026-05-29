@@ -3224,12 +3224,14 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       }
     }
 
-    // Tracing.
-    if (this.webglRendererIoTracingService.curIoTracingData != null) {
-      const tracingData = this.webglRendererIoTracingService.curIoTracingData;
+    // Tracing. When active, dim every node not on the focus tracing path
+    // (issue #131); retained outputs are no longer special-cased so users
+    // can read tracing paths without the "highlighted outputs" noise.
+    const tracingData = this.webglRendererIoTracingService.curIoTracingData;
+    if (tracingData != null) {
       const nodeIds = Object.keys(this.curModelGraph.nodesById).filter(
         (id) =>
-          !tracingData.visibleNodeIds.has(id) && this.isNodeRendered(id),
+          !tracingData.focusPathNodeIds.has(id) && this.isNodeRendered(id),
       );
       this.nodeBodies.updateOpacity(nodeIds, 0.2);
       if (useSvgTextRenderer) {
@@ -3251,8 +3253,8 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       const edgeIdsToDim = this.edgesToRender
         .filter(
           ({edge}) =>
-            !tracingData.visibleNodeIds.has(edge.fromNodeId) ||
-            !tracingData.visibleNodeIds.has(edge.toNodeId),
+            !tracingData.focusPathNodeIds.has(edge.fromNodeId) ||
+            !tracingData.focusPathNodeIds.has(edge.toNodeId),
         )
         .map(({edge}) => edge.id);
       this.edges.updateColors(
@@ -3266,11 +3268,15 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     const allGraphOutputsNodeIds = Object.keys(this.curModelGraph.nodesById)
       .filter((id) => {
         const node = this.curModelGraph.nodesById[id];
-        return (
-          node != null &&
-          isOutputsNode(node) &&
-          this.isNodeRendered(id)
-        );
+        if (node == null || !isOutputsNode(node) || !this.isNodeRendered(id)) {
+          return false;
+        }
+        // When tracing is active, only outputs on the focus path keep the
+        // subtle highlight; the rest stay dim per the tracing block above.
+        if (tracingData != null && !tracingData.focusPathNodeIds.has(id)) {
+          return false;
+        }
+        return true;
       });
     if (allGraphOutputsNodeIds.length > 0) {
       this.nodeBodies.updateOpacity(
