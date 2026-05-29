@@ -172,6 +172,22 @@ describe('RendererWrapper', () => {
     expect(component.showFocusDataflowPanel).toBeFalse();
     expect(appendToken).not.toHaveBeenCalled();
   });
+
+  it('should_useAllDepthForTraceIo', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const setIoTraceDepth = jasmine.createSpy('setIoTraceDepth');
+    const toggleIoTrace = jasmine.createSpy('toggleIoTrace');
+    component.webglRenderer = {
+      setIoTraceDepth,
+      toggleIoTrace,
+    } as any;
+
+    component.handleClickTrace();
+
+    expect(setIoTraceDepth).toHaveBeenCalledOnceWith(undefined);
+    expect(toggleIoTrace).toHaveBeenCalled();
+  });
 });
 
 function createModelGraph(nodesById: ModelGraph['nodesById']): ModelGraph {

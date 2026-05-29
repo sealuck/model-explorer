@@ -99,7 +99,6 @@ export class RendererWrapper {
   );
   disableDownloadPngHelpPopup = false;
   transparentPngBackground = new FormControl<boolean>(false);
-  traceDepth = new FormControl<string>('all');
   showFocusDataflowPanel = false;
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
@@ -168,6 +167,7 @@ export class RendererWrapper {
   }
 
   handleClickTrace() {
+    this.webglRenderer?.setIoTraceDepth(undefined);
     this.webglRenderer?.toggleIoTrace();
   }
 
@@ -194,19 +194,6 @@ export class RendererWrapper {
       this.changeDetectorRef.detectChanges();
     }
     this.focusDataflowPanelRef?.appendToken(token);
-  }
-
-  handleTraceDepthChange() {
-    this.webglRenderer?.setIoTraceDepth(this.parseTraceDepth());
-  }
-
-  private parseTraceDepth(): number | undefined {
-    const value = (this.traceDepth.value || '').trim().toLowerCase();
-    if (value === '' || value === 'all') {
-      return undefined;
-    }
-    const depth = Number(value);
-    return Number.isFinite(depth) && depth >= 0 ? Math.floor(depth) : undefined;
   }
 
   handleClickToggleTransparentPngBackground(event: MouseEvent) {

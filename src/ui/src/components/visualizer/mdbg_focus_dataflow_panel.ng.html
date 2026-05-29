@@ -69,17 +69,9 @@ limitations under the License.
     }
 
     <label>
-      Mode
-      <select [formControl]="mode">
-        <option value="union">Union</option>
-        <option value="inter-seed">Inter-seed</option>
-      </select>
-    </label>
-
-    <label>
       Context
       <select [formControl]="context">
-        <option value="none">None</option>
+        <option value="inter-seed">Inter-seed</option>
         <option value="upstream">Upstream</option>
         <option value="downstream">Downstream</option>
         <option value="both">Both</option>
@@ -88,12 +80,7 @@ limitations under the License.
 
     <label>
       Context depth
-      <select [formControl]="contextDepth">
-        <option value="0">0</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="all">all</option>
-      </select>
+      <input type="text" [formControl]="contextDepth">
     </label>
 
     <button mat-flat-button

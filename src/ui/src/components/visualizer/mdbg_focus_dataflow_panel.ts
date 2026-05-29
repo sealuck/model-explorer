@@ -88,9 +88,8 @@ export class MdbgFocusDataflowPanelComponent {
   chipElements!: QueryList<ElementRef<HTMLElement>>;
 
   readonly nodesSsas = new FormControl<string>('', {nonNullable: true});
-  readonly mode = new FormControl<string>('union', {nonNullable: true});
-  readonly context = new FormControl<string>('none', {nonNullable: true});
-  readonly contextDepth = new FormControl<string>('0', {nonNullable: true});
+  readonly context = new FormControl<string>('both', {nonNullable: true});
+  readonly contextDepth = new FormControl<string>('all', {nonNullable: true});
 
   readonly chipList: string[] = [];
   readonly addedChips = new Set<string>();
@@ -108,9 +107,10 @@ export class MdbgFocusDataflowPanelComponent {
     for (const seed of this.nodeSsas) {
       params.append('seed', seed);
     }
-    params.set('mode', this.nodeSsas.length === 1 ? 'single' : this.mode.value);
-    params.set('context', this.context.value);
-    params.set('context_depth', this.contextDepth.value);
+    const focusRouteOptions = this.getFocusRouteOptions();
+    params.set('mode', focusRouteOptions.mode);
+    params.set('context', focusRouteOptions.context);
+    params.set('context_depth', this.contextDepth.value.trim());
 
     const nodeDataPaths = this.getNodeDataPathsFromUrl();
     if (nodeDataPaths.length > 0) {
@@ -118,6 +118,18 @@ export class MdbgFocusDataflowPanelComponent {
     }
 
     window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
+  }
+
+  private getFocusRouteOptions(): {mode: string; context: string} {
+    const context = this.context.value;
+    if (context === 'inter-seed') {
+      return {mode: 'inter-seed', context: 'none'};
+    }
+
+    return {
+      mode: this.nodeSsas.length === 1 ? 'single' : 'union',
+      context,
+    };
   }
 
   appendToken(token: string): void {

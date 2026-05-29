@@ -149,20 +149,31 @@ describe('MdbgFocusDataflowPanelComponent', () => {
     );
   });
 
-  it('should_keep_context_enabled_in_inter_seed_mode', () => {
-    component.mode.setValue('inter-seed');
+  it('should_render_context_options_with_both_default', () => {
     fixture.detectChanges();
 
-    expect(component.context.enabled).toBeTrue();
+    const options = Array.from(
+      fixture.nativeElement.querySelectorAll('select option'),
+    ).map((option) => ({
+      value: (option as HTMLOptionElement).value,
+      text: (option as HTMLOptionElement).textContent?.trim(),
+    }));
+
+    expect(options).toEqual([
+      {value: 'inter-seed', text: 'Inter-seed'},
+      {value: 'upstream', text: 'Upstream'},
+      {value: 'downstream', text: 'Downstream'},
+      {value: 'both', text: 'Both'},
+    ]);
+    expect(component.context.value).toBe('both');
   });
 
-  it('should_build_focus_url_with_seed_mode_context_and_context_depth', () => {
+  it('should_build_focus_url_for_inter_seed_context', () => {
     const openSpy = spyOn(window, 'open');
     component.appendToken('%0');
     component.appendToken('%1');
-    component.mode.setValue('inter-seed');
-    component.context.setValue('upstream');
-    component.contextDepth.setValue('2');
+    component.context.setValue('inter-seed');
+    component.contextDepth.setValue('all');
     window.history.pushState(
       {},
       '',
@@ -179,18 +190,56 @@ describe('MdbgFocusDataflowPanelComponent', () => {
 
     expect(openSpy).toHaveBeenCalled();
     const url = openSpy.calls.mostRecent().args[0] as string;
+    const params = getFocusUrlParams(url);
+    expect(params.get('mode')).toBe('inter-seed');
+    expect(params.get('context')).toBe('none');
+    expect(params.get('context_depth')).toBe('all');
+    expect(params.get('node_data_paths')).toBe('/tmp/node-data.json');
+  });
+
+  it('should_build_focus_url_for_both_context_with_two_seeds', () => {
+    const openSpy = spyOn(window, 'open');
+    component.appendToken('%0');
+    component.appendToken('%1');
+    component.context.setValue('both');
+    component.contextDepth.setValue('3');
+
+    component.handleClickFocus();
+
+    const params = getFocusUrlParams(
+      openSpy.calls.mostRecent().args[0] as string,
+    );
+    expect(params.getAll('seed')).toEqual(['%0', '%1']);
+    expect(params.get('mode')).toBe('union');
+    expect(params.get('context')).toBe('both');
+    expect(params.get('context_depth')).toBe('3');
+  });
+
+  it('should_build_focus_url_for_both_context_with_one_seed', () => {
+    const openSpy = spyOn(window, 'open');
+    component.appendToken('%0');
+    component.context.setValue('both');
+    component.contextDepth.setValue(' 3 ');
+
+    component.handleClickFocus();
+
+    const params = getFocusUrlParams(
+      openSpy.calls.mostRecent().args[0] as string,
+    );
+    expect(params.getAll('seed')).toEqual(['%0']);
+    expect(params.get('mode')).toBe('single');
+    expect(params.get('context')).toBe('both');
+    expect(params.get('context_depth')).toBe('3');
+  });
+
+  function getFocusUrlParams(url: string): URLSearchParams {
     expect(url.startsWith('/focus?')).toBeTrue();
     expect(url).not.toContain(['/multi', 'focus'].join('-'));
-
     const params = new URLSearchParams(url.substring(url.indexOf('?') + 1));
-    expect(params.getAll('seed')).toEqual(['%0', '%1']);
-    expect(params.get('mode')).toBe('inter-seed');
-    expect(params.get('context')).toBe('upstream');
-    expect(params.get('context_depth')).toBe('2');
-    expect(params.get('node_data_paths')).toBe('/tmp/node-data.json');
     expect(params.has(['direc', 'tion'].join(''))).toBeFalse();
     expect(params.has(['dep', 'th'].join(''))).toBeFalse();
-  });
+    return params;
+  }
 
   function getChipElement(): HTMLElement {
     return fixture.nativeElement.querySelector('.chip') as HTMLElement;

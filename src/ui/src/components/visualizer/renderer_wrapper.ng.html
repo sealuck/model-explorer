@@ -142,12 +142,6 @@ limitations under the License.
           </div>
         </div>
       </ng-template>
-      <input class="trace-depth-input"
-          type="text"
-          placeholder="all"
-          title="Trace IO depth. Use all or empty for all ancestors and descendants; use 0, 1, 2... for N hops."
-          [formControl]="traceDepth"
-          (input)="handleTraceDepthChange()">
       <div class="mat-icon-container focus-dataflow-panel"
           [bubble]="helpFocusDataflowPanel"
           [overlaySize]="helpPopupSize"
