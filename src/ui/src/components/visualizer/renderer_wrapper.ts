@@ -44,7 +44,7 @@ import {
 } from './common/types';
 import {isGroupNode, isOpNode, isOutputsNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
-import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
+import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
 import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
@@ -64,7 +64,7 @@ import {WebglRenderer} from './webgl_renderer';
     MatIconModule,
     MatMenuModule,
     MatTooltipModule,
-    MdbgMultiFocusDialogComponent,
+    MdbgFocusDataflowPanelComponent,
     ReactiveFormsModule,
     SearchBar,
     SnapshotManager,
@@ -86,8 +86,8 @@ export class RendererWrapper {
   @Output() readonly openInPopupClicked = new EventEmitter<PopupPanelData>();
 
   @ViewChild('webglRenderer') webglRenderer?: WebglRenderer;
-  @ViewChild(MdbgMultiFocusDialogComponent)
-  multiFocusDialogRef?: MdbgMultiFocusDialogComponent;
+  @ViewChild(MdbgFocusDataflowPanelComponent)
+  focusDataflowPanelRef?: MdbgFocusDataflowPanelComponent;
 
   readonly helpPopupSize: OverlaySizeConfig = {
     minWidth: 0,
@@ -104,7 +104,7 @@ export class RendererWrapper {
   readonly focusDirection = new FormControl<string>('both', {
     nonNullable: true,
   });
-  showMultiFocusDialog = false;
+  showFocusDataflowPanel = false;
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
 
@@ -182,7 +182,7 @@ export class RendererWrapper {
     if (!selectedNodeId || !this.modelGraph.modelPath) {
       return;
     }
-    this.clearMultiFocusState();
+    this.clearFocusDataflowPanelState();
 
     const selectedNode = this.modelGraph.nodesById[selectedNodeId];
     const isFunctionOutput =
@@ -219,14 +219,14 @@ export class RendererWrapper {
     window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
   }
 
-  handleClickMultiFocusDialog() {
-    this.showMultiFocusDialog = !this.showMultiFocusDialog;
+  handleClickFocusDataflowPanel() {
+    this.showFocusDataflowPanel = !this.showFocusDataflowPanel;
   }
 
-  private clearMultiFocusState(): void {
+  private clearFocusDataflowPanelState(): void {
     this.subgraphSelectionService.clearSelection();
-    this.multiFocusDialogRef?.clearTokens();
-    this.showMultiFocusDialog = false;
+    this.focusDataflowPanelRef?.clearTokens();
+    this.showFocusDataflowPanel = false;
     this.changeDetectorRef.markForCheck();
   }
 
@@ -250,11 +250,11 @@ export class RendererWrapper {
       }
     }
 
-    if (!this.showMultiFocusDialog) {
-      this.showMultiFocusDialog = true;
+    if (!this.showFocusDataflowPanel) {
+      this.showFocusDataflowPanel = true;
       this.changeDetectorRef.detectChanges();
     }
-    this.multiFocusDialogRef?.appendToken(token);
+    this.focusDataflowPanelRef?.appendToken(token);
   }
 
   handleTraceDepthChange() {

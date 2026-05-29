@@ -173,18 +173,18 @@ limitations under the License.
           </div>
         </div>
       </ng-template>
-      <div class="mat-icon-container multi-focus-dataflow"
-          [bubble]="helpMultiFocusDataflow"
+      <div class="mat-icon-container focus-dataflow-panel"
+          [bubble]="helpFocusDataflowPanel"
           [overlaySize]="helpPopupSize"
           [hoverDelayMs]="10"
-          (click)="handleClickMultiFocusDialog()">
-        <mat-icon class="toolbar-icon multi-focus-dataflow">
+          (click)="handleClickFocusDataflowPanel()">
+        <mat-icon class="toolbar-icon focus-dataflow-panel">
           hub
         </mat-icon>
       </div>
-      <ng-template #helpMultiFocusDataflow>
+      <ng-template #helpFocusDataflowPanel>
         <div class="model-explorer-help-popup">
-          Multi-Focus dataflow — open a subgraph centred on multiple SSA values
+          Focus Dataflow
         </div>
       </ng-template>
       <div class="vertical-divider"></div>
@@ -247,12 +247,12 @@ limitations under the License.
       </ng-container>
     </div>
 
-    @if (showMultiFocusDialog) {
-      <mdbg-multi-focus-dialog
+    @if (showFocusDataflowPanel) {
+      <mdbg-focus-dataflow-panel
           [class.pushed-down]="showSubgraphBreadcrumbs"
           [modelGraph]="modelGraph"
           [paneId]="paneId">
-      </mdbg-multi-focus-dialog>
+      </mdbg-focus-dataflow-panel>
     }
   }
 

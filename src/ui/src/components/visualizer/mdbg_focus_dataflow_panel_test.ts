@@ -25,19 +25,19 @@ import {
 import {provideNoopAnimations} from '@angular/platform-browser/animations';
 
 import {ModelGraph, NodeType, OpNode} from './common/model_graph';
-import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
+import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
 
-describe('MdbgMultiFocusDialogComponent', () => {
-  let fixture: ComponentFixture<MdbgMultiFocusDialogComponent>;
-  let component: MdbgMultiFocusDialogComponent;
+describe('MdbgFocusDataflowPanelComponent', () => {
+  let fixture: ComponentFixture<MdbgFocusDataflowPanelComponent>;
+  let component: MdbgFocusDataflowPanelComponent;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [MdbgMultiFocusDialogComponent],
+      imports: [MdbgFocusDataflowPanelComponent],
       providers: [provideNoopAnimations()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(MdbgMultiFocusDialogComponent);
+    fixture = TestBed.createComponent(MdbgFocusDataflowPanelComponent);
     component = fixture.componentInstance;
     component.modelGraph = {modelPath: '/tmp/model.mlir'} as ModelGraph;
     component.paneId = 'pane-id';
@@ -134,6 +134,62 @@ describe('MdbgMultiFocusDialogComponent', () => {
 
     expect(component.nodeSsas).toEqual(['%1', '%2']);
     expect(component.chipList).toEqual(['%1', '%2']);
+  });
+
+  it('should_render_import_seeds_above_seed_chip_list', () => {
+    const importSeeds = fixture.nativeElement.querySelector(
+      '.import-seeds-section',
+    ) as HTMLElement;
+    const seedChipList = fixture.nativeElement.querySelector(
+      '.seed-chip-list-section',
+    ) as HTMLElement;
+
+    expect(importSeeds.compareDocumentPosition(seedChipList)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('should_keep_context_enabled_in_inter_seed_mode', () => {
+    component.mode.setValue('inter-seed');
+    fixture.detectChanges();
+
+    expect(component.context.enabled).toBeTrue();
+  });
+
+  it('should_build_focus_url_with_seed_mode_context_and_context_depth', () => {
+    const openSpy = spyOn(window, 'open');
+    component.appendToken('%0');
+    component.appendToken('%1');
+    component.mode.setValue('inter-seed');
+    component.context.setValue('upstream');
+    component.contextDepth.setValue('2');
+    window.history.pushState(
+      {},
+      '',
+      `/?data=${encodeURIComponent(
+        JSON.stringify({nodeData: ['/tmp/node-data.json']}),
+      )}`,
+    );
+
+    try {
+      component.handleClickFocus();
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+
+    expect(openSpy).toHaveBeenCalled();
+    const url = openSpy.calls.mostRecent().args[0] as string;
+    expect(url.startsWith('/focus?')).toBeTrue();
+    expect(url).not.toContain(['/multi', 'focus'].join('-'));
+
+    const params = new URLSearchParams(url.substring(url.indexOf('?') + 1));
+    expect(params.getAll('seed')).toEqual(['%0', '%1']);
+    expect(params.get('mode')).toBe('inter-seed');
+    expect(params.get('context')).toBe('upstream');
+    expect(params.get('context_depth')).toBe('2');
+    expect(params.get('node_data_paths')).toBe('/tmp/node-data.json');
+    expect(params.has(['direc', 'tion'].join(''))).toBeFalse();
+    expect(params.has(['dep', 'th'].join(''))).toBeFalse();
   });
 
   function getChipElement(): HTMLElement {

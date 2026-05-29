@@ -17,7 +17,7 @@ limitations under the License.
 -->
 
 <div class="section">
-  <div class="header">Multi-Focus Dataflow</div>
+  <div class="header">Focus Dataflow</div>
 
   <form class="content" (submit)="$event.preventDefault()">
     <input
@@ -29,14 +29,14 @@ limitations under the License.
 
     <button
         mat-stroked-button
-        class="import-button"
+        class="import-button import-seeds-section"
         type="button"
         (click)="fileInput.click()">
-      Import from file
+      Import seeds from file
     </button>
 
-    <label>
-      SSA values
+    <label class="seed-chip-list-section">
+      Seeds
       <div class="chip-container">
         @for (chip of chipList; track chip) {
           <span
@@ -48,7 +48,7 @@ limitations under the License.
             <button
                 class="chip-remove"
                 type="button"
-                aria-label="Remove SSA value"
+                aria-label="Remove seed"
                 (click)="removeToken(chip)">
               &times;
             </button>
@@ -76,20 +76,24 @@ limitations under the License.
       </select>
     </label>
 
-    @if (showDirection) {
-      <label>
-        Direction
-        <select [formControl]="direction">
-          <option value="both">both</option>
-          <option value="backward">Upstream</option>
-          <option value="forward">Downstream</option>
-        </select>
-      </label>
-    }
+    <label>
+      Context
+      <select [formControl]="context">
+        <option value="none">None</option>
+        <option value="upstream">Upstream</option>
+        <option value="downstream">Downstream</option>
+        <option value="both">Both</option>
+      </select>
+    </label>
 
     <label>
-      Depth
-      <input type="text" placeholder="all" [formControl]="depth">
+      Context depth
+      <select [formControl]="contextDepth">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="all">all</option>
+      </select>
     </label>
 
     <button mat-flat-button

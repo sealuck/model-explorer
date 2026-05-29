@@ -21,15 +21,12 @@ import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
-  DestroyRef,
   ElementRef,
   inject,
   Input,
-  OnInit,
   QueryList,
   ViewChildren,
 } from '@angular/core';
-import {takeUntilDestroyed} from '@angular/core/rxjs-interop';
 import {FormControl, ReactiveFormsModule} from '@angular/forms';
 import {MatButtonModule} from '@angular/material/button';
 import {MatIconModule} from '@angular/material/icon';
@@ -70,21 +67,21 @@ function readAttr(node: ModelNode, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** Toolbar dialog for focusing dataflow from multiple source SSA values. */
+/** Toolbar panel for focusing dataflow from source SSA values. */
 @Component({
   standalone: true,
-  selector: 'mdbg-multi-focus-dialog',
+  selector: 'mdbg-focus-dataflow-panel',
   imports: [
     CommonModule,
     MatButtonModule,
     MatIconModule,
     ReactiveFormsModule,
   ],
-  templateUrl: './mdbg_multi_focus_dialog.ng.html',
-  styleUrls: ['./mdbg_multi_focus_dialog.scss'],
+  templateUrl: './mdbg_focus_dataflow_panel.ng.html',
+  styleUrls: ['./mdbg_focus_dataflow_panel.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MdbgMultiFocusDialogComponent implements OnInit {
+export class MdbgFocusDataflowPanelComponent {
   @Input({required: true}) modelGraph!: ModelGraph;
   @Input({required: true}) paneId!: string;
   @ViewChildren('chipElement')
@@ -92,28 +89,14 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
 
   readonly nodesSsas = new FormControl<string>('', {nonNullable: true});
   readonly mode = new FormControl<string>('union', {nonNullable: true});
-  readonly direction = new FormControl<string>('both', {nonNullable: true});
-  readonly depth = new FormControl<string>('all', {nonNullable: true});
+  readonly context = new FormControl<string>('none', {nonNullable: true});
+  readonly contextDepth = new FormControl<string>('0', {nonNullable: true});
 
   readonly chipList: string[] = [];
   readonly addedChips = new Set<string>();
   importWarnings: SsaFileImportUnresolvedLine[] = [];
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  ngOnInit() {
-    this.mode.valueChanges
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((mode) => {
-        if (mode === 'inter-seed') {
-          this.direction.disable();
-        } else {
-          this.direction.enable();
-        }
-        this.changeDetectorRef.markForCheck();
-      });
-  }
 
   handleClickFocus() {
     if (!this.canFocus) {
@@ -122,14 +105,19 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
 
     const params = new URLSearchParams();
     params.set('graph_path', this.graphPath);
-    params.set('node_ssas', this.nodeSsas.join(','));
-    params.set('mode', this.mode.value);
-    params.set('depth', this.parseDepth());
-    if (this.mode.value !== 'inter-seed') {
-      params.set('direction', this.direction.value);
+    for (const seed of this.nodeSsas) {
+      params.append('seed', seed);
+    }
+    params.set('mode', this.nodeSsas.length === 1 ? 'single' : this.mode.value);
+    params.set('context', this.context.value);
+    params.set('context_depth', this.contextDepth.value);
+
+    const nodeDataPaths = this.getNodeDataPathsFromUrl();
+    if (nodeDataPaths.length > 0) {
+      params.set('node_data_paths', nodeDataPaths.join(','));
     }
 
-    window.open(`/multi-focus?${params.toString()}`, '_blank', 'noopener');
+    window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
   }
 
   appendToken(token: string): void {
@@ -217,19 +205,8 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
     return [...this.chipList];
   }
 
-  get showDirection(): boolean {
-    return this.mode.value !== 'inter-seed';
-  }
-
   get canFocus(): boolean {
     return this.graphPath !== '' && this.nodeSsas.length > 0;
-  }
-
-  private parseDepth(): string {
-    const v = this.depth.value.trim().toLowerCase();
-    if (v === '' || v === 'all') return '-1';
-    const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? String(Math.floor(n)) : '-1';
   }
 
   private syncNodesSsas(): void {
@@ -244,6 +221,25 @@ export class MdbgMultiFocusDialogComponent implements OnInit {
       behavior: 'smooth',
       block: 'nearest',
     });
+  }
+
+  private getNodeDataPathsFromUrl(): string[] {
+    const data = new URLSearchParams(window.location.search).get('data');
+    if (!data) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(data) as {nodeData?: unknown};
+      if (!Array.isArray(parsed.nodeData)) {
+        return [];
+      }
+      return parsed.nodeData.filter((item): item is string => {
+        return typeof item === 'string' && item.length > 0;
+      });
+    } catch {
+      return [];
+    }
   }
 
   private getOutputNodeSsas(): string[] {

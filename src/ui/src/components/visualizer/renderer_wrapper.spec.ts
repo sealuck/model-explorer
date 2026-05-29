@@ -96,14 +96,14 @@ describe('RendererWrapper', () => {
       maxDescendantOpNodeCount: 0,
       minDescendantOpNodeCount: 0,
     } as ModelGraph;
-    component.showMultiFocusDialog = true;
-    component.multiFocusDialogRef = {clearTokens} as any;
+    component.showFocusDataflowPanel = true;
+    component.focusDataflowPanelRef = {clearTokens} as any;
 
     component.handleClickFocusDataflow();
 
     expect(subgraphSelectionService.clearSelection).toHaveBeenCalled();
     expect(clearTokens).toHaveBeenCalled();
-    expect(component.showMultiFocusDialog).toBeFalse();
+    expect(component.showFocusDataflowPanel).toBeFalse();
     expect(openSpy).toHaveBeenCalledWith(
       '/focus?graph_path=%2Ftmp%2Fmodel.mlir&node_ssa=%250&direction=both&depth=-1',
       '_blank',
