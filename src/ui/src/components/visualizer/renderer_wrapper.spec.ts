@@ -107,14 +107,14 @@ describe('RendererWrapper', () => {
     expect(appendToken).toHaveBeenCalledOnceWith('%foo');
   });
 
-  it('should_appendNodeIdToken_when_ctrlClickedOnFunctionOutputNode', () => {
+  it('should_appendNodeIdTokenWithLabel_when_ctrlClickedOnFunctionOutputNode', () => {
     const fixture = TestBed.createComponent(RendererWrapper);
     const component = fixture.componentInstance;
     const appendToken = jasmine.createSpy('appendToken');
 
     component.modelGraph = createModelGraph({
       'output-node': {
-        id: 'output-node',
+        id: 'foo.mlir:1:1::outputs3',
         label: 'output node',
         namespace: '',
         level: 0,
@@ -130,7 +130,10 @@ describe('RendererWrapper', () => {
 
     component.handleNodeCtrlClicked('output-node');
 
-    expect(appendToken).toHaveBeenCalledOnceWith('nodeId:output-node');
+    expect(appendToken).toHaveBeenCalledOnceWith(
+      'nodeId:foo.mlir:1:1::outputs3',
+      'outputs3',
+    );
   });
 
   it('should_notDuplicateChip_when_ctrlClickedTwiceForSameNode', () => {

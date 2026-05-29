@@ -140,54 +140,53 @@ describe('MdbgFocusDataflowPanelComponent', () => {
   });
 
   it('should_render_output_seed_chip_label_instead_of_token', () => {
-    component.appendToken('nodeId:long-generated-output-node-id', 'Outputs #1');
+    const token = 'nodeId:foo.mlir:1:1::outputs3';
+
+    component.appendToken(token, 'outputs3');
     fixture.detectChanges();
 
-    expect(getChipLabelText()).toBe('Outputs #1');
-    expect(getChipLabelText()).not.toBe('nodeId:long-generated-output-node-id');
+    expect(getChipLabelText()).toBe('outputs3');
+    expect(component.chipList).toEqual([{token, label: 'outputs3'}]);
+    expect(getChipElement().getAttribute('title')).toBe(token);
   });
 
   it('should_build_focus_url_with_output_seed_token', () => {
     const openSpy = spyOn(window, 'open');
-    component.appendToken('nodeId:long-generated-output-node-id', 'Outputs #1');
+    component.appendToken('nodeId:foo.mlir:1:1::outputs3', 'outputs3');
 
     component.handleClickFocus();
 
     const params = getFocusUrlParams(
       openSpy.calls.mostRecent().args[0] as string,
     );
-    expect(params.getAll('seed')).toEqual([
-      'nodeId:long-generated-output-node-id',
-    ]);
+    expect(params.getAll('seed')).toEqual(['nodeId:foo.mlir:1:1::outputs3']);
   });
 
-  it('should_number_output_seed_labels_for_same_node_label', () => {
-    const firstLabel = component.getNextOutputSeedLabel('Outputs');
-    component.appendToken('nodeId:first-output', firstLabel);
-    const secondLabel = component.getNextOutputSeedLabel('Outputs');
-    component.appendToken('nodeId:second-output', secondLabel);
+  it('should_keep_trailing_segment_output_seed_labels', () => {
+    component.appendToken('nodeId:foo.mlir:1:1::outputs0', 'outputs0');
+    component.appendToken('nodeId:foo.mlir:1:1::outputs1', 'outputs1');
 
     expect(component.chipList.map((chip) => chip.label)).toEqual([
-      'Outputs #1',
-      'Outputs #2',
+      'outputs0',
+      'outputs1',
     ]);
   });
 
   it('should_deduplicate_output_seed_chips_by_token', () => {
-    component.appendToken('nodeId:output-node', 'Outputs #1');
-    component.appendToken('nodeId:output-node', 'Outputs #2');
+    component.appendToken('nodeId:foo.mlir:1:1::outputs3', 'outputs3');
+    component.appendToken('nodeId:foo.mlir:1:1::outputs3', 'outputs4');
 
     expect(component.chipList).toEqual([
-      {token: 'nodeId:output-node', label: 'Outputs #1'},
+      {token: 'nodeId:foo.mlir:1:1::outputs3', label: 'outputs3'},
     ]);
   });
 
   it('should_expose_full_seed_token_in_chip_title', () => {
-    component.appendToken('nodeId:long-generated-output-node-id', 'Outputs #1');
+    component.appendToken('nodeId:foo.mlir:1:1::outputs3', 'outputs3');
     fixture.detectChanges();
 
     expect(getChipElement().getAttribute('title')).toBe(
-      'nodeId:long-generated-output-node-id',
+      'nodeId:foo.mlir:1:1::outputs3',
     );
   });
 

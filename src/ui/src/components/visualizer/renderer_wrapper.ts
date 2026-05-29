@@ -36,7 +36,7 @@ import {MatMenuModule} from '@angular/material/menu';
 import {MatTooltipModule} from '@angular/material/tooltip';
 import {Bubble} from '../bubble/bubble';
 import {AppService} from './app_service';
-import {type ModelGraph} from './common/model_graph';
+import {type ModelGraph, type OpNode} from './common/model_graph';
 import {
   PopupPanelData,
   SelectedNodeInfo,
@@ -195,13 +195,21 @@ export class RendererWrapper {
       this.changeDetectorRef.detectChanges();
     }
     const label = isFunctionOutput
-      ? this.focusDataflowPanelRef?.getNextOutputSeedLabel?.(node.label)
+      ? this.getOutputSeedLabel(node)
       : undefined;
     if (label === undefined) {
       this.focusDataflowPanelRef?.appendToken(token);
     } else {
       this.focusDataflowPanelRef?.appendToken(token, label);
     }
+  }
+
+  private getOutputSeedLabel(node: OpNode): string {
+    const separatorIndex = node.id.lastIndexOf('::');
+    if (separatorIndex !== -1) {
+      return node.id.substring(separatorIndex + 2);
+    }
+    return node.label || node.id;
   }
 
   handleClickToggleTransparentPngBackground(event: MouseEvent) {
