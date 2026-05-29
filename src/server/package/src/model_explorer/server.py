@@ -568,19 +568,34 @@ def start(
 
     from urllib.parse import quote
 
-    # Write focused graph to a temp file so Model Explorer can load it.
-    import tempfile
-    tmp = tempfile.NamedTemporaryFile(
-        mode='w', suffix='.json', prefix='mdbg_focus_', delete=False
-    )
-    tmp.write(result.stdout)
-    tmp.close()
+    # Mark the focus node with the same seed-role highlight that multi-focus
+    # applies; single-focus and multi-focus should look identical for the seed.
+    try:
+      subgraph_data = json.loads(result.stdout)
+      seed_token = node_ssa if node_ssa else f'nodeId:{node_id}'
+      seed_roles = _build_seed_roles(subgraph_data, seed_token)
+    except Exception:
+      seed_roles = {}
 
-    data = {'models': [{'url': tmp.name, 'adapterId': 'mdbg_mlir'}]}
+    # Write focused graph (and seed roles) to a temp dir so Model Explorer can
+    # load them together.
+    tmp_dir = tempfile.mkdtemp(prefix='mdbg_focus_')
+    graph_tmp_path = os.path.join(tmp_dir, 'subgraph.json')
+    with open(graph_tmp_path, 'w') as f:
+      f.write(result.stdout)
+
+    paths = []
+    if seed_roles:
+      seed_roles_path = os.path.join(tmp_dir, 'seed_roles.json')
+      with open(seed_roles_path, 'w') as f:
+        f.write(json.dumps(seed_roles, indent=2))
+      paths.append(seed_roles_path)
     if node_data_paths:
-      paths = [p.strip() for p in node_data_paths.split(',') if p.strip()]
-      if paths:
-        data['nodeData'] = paths
+      paths += [p.strip() for p in node_data_paths.split(',') if p.strip()]
+
+    data = {'models': [{'url': graph_tmp_path, 'adapterId': 'mdbg_mlir'}]}
+    if paths:
+      data['nodeData'] = paths
     return redirect(f'/?data={quote(json.dumps(data))}')
 
   @app.route('/multi-focus')
