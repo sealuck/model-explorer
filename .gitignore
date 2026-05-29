@@ -7,6 +7,11 @@
 # Pure local build state; must never be committed.
 .me_build_stamp
 
+# Angular build output: src/ui/dist -> server/.../web_app is a copy of build
+# artifacts. Never commit; install_deps.sh regenerates them per machine so
+# different machines don't pull each other's stale bundles.
+src/server/package/src/model_explorer/web_app/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
