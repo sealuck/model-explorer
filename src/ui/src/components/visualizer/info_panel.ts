@@ -915,22 +915,6 @@ export class InfoPanel {
       }
     }
 
-    const body = this.getBodyAttrValue(opNode);
-    if (body) {
-      const bodySection: InfoSection = {
-        label: SectionLabel.BODY,
-        sectionType: 'op',
-        items: [],
-      };
-      bodySection.items.push({
-        section: bodySection,
-        label: SectionLabel.BODY,
-        value: body,
-        bigText: true,
-      });
-      this.sections.push(bodySection);
-    }
-
     const constants = this.getConstantsAttrValue(opNode);
     if (constants) {
       const constantsSection: InfoSection = {
@@ -945,6 +929,22 @@ export class InfoPanel {
         bigText: true,
       });
       this.sections.push(constantsSection);
+    }
+
+    const body = this.getBodyAttrValue(opNode);
+    if (body) {
+      const bodySection: InfoSection = {
+        label: SectionLabel.BODY,
+        sectionType: 'op',
+        items: [],
+      };
+      bodySection.items.push({
+        section: bodySection,
+        label: SectionLabel.BODY,
+        value: body,
+        bigText: true,
+      });
+      this.sections.push(bodySection);
     }
 
     // Section for node data providers.

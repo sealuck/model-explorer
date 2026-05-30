@@ -128,6 +128,21 @@ describe('InfoPanel', () => {
     expect(getTextContent()).not.toContain('Constants');
   });
 
+  // Constants must render above Body so referenced values read before the body.
+  it('should_show_constants_section_above_body_section_when_node_has_both', () => {
+    const body = 'linalg.yield %in : f32';
+    const constants = 'input 1: %c10 = arith.constant 10 : index';
+    pane.modelGraph = createModelGraph(
+      createOpNode({body, mdbg_constants: constants}),
+    );
+    fixture = createComponent();
+
+    const textContent = getTextContent();
+    expect(textContent.indexOf('Constants')).toBeLessThan(
+      textContent.indexOf('Body'),
+    );
+  });
+
   function createComponent(): ComponentFixture<InfoPanel> {
     const fixture = TestBed.createComponent(InfoPanel);
     fixture.componentInstance.paneId = 'pane_1';
