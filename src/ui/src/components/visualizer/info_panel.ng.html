@@ -34,7 +34,7 @@ limitations under the License.
           {{getSectionDisplayLabel(section.label)}}
         </div>
         <div class="items-container">
-          @if (section.label === SectionLabel.BODY) {
+          @if (section.label === SectionLabel.BODY || section.label === SectionLabel.CONSTANTS) {
             @for (item of section.items; track item.label) {
               <pre class="body-content" [style.font-size.px]="fontSize">{{item.value}}</pre>
             }

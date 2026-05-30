@@ -98,6 +98,7 @@ enum SectionLabel {
   ATTRIBUTES = 'Attributes',
   NODE_DATA_PROVIDERS = 'Node data providers',
   BODY = 'Body',
+  CONSTANTS = 'Constants',
   IDENTICAL_GROUPS = 'Identical groups',
   INPUTS = 'inputs',
   OUTPUTS = 'outputs',
@@ -144,6 +145,13 @@ const MIN_WIDTH = 64;
 const SIDE_PANEL_WIDTH_ANIMATION_DURATION = 150;
 const DEFAULT_WIDTH = 370;
 const BODY_ATTR_KEYS = ['body', 'region', '__body__', 'body_str'];
+const CONSTANTS_ATTR_KEYS = ['mdbg_constants'];
+// Attr keys rendered in their own dedicated sections; excluded from the generic
+// Attributes section to avoid showing the same value twice.
+const DEDICATED_SECTION_ATTR_KEYS = new Set([
+  ...BODY_ATTR_KEYS,
+  ...CONSTANTS_ATTR_KEYS,
+]);
 
 /** The info panel component that shows info for selected element. */
 @Component({
@@ -885,6 +893,10 @@ export class InfoPanel {
         if (key.startsWith('__')) {
           continue;
         }
+        // Skip keys shown in their own dedicated section (Body, Constants).
+        if (DEDICATED_SECTION_ATTR_KEYS.has(key.toLowerCase())) {
+          continue;
+        }
         const value = attrs[key];
         const strValue = typeof value === 'string' ? value : '';
         const specialValue: SpecialNodeAttributeValue | undefined =
@@ -917,6 +929,22 @@ export class InfoPanel {
         bigText: true,
       });
       this.sections.push(bodySection);
+    }
+
+    const constants = this.getConstantsAttrValue(opNode);
+    if (constants) {
+      const constantsSection: InfoSection = {
+        label: SectionLabel.CONSTANTS,
+        sectionType: 'op',
+        items: [],
+      };
+      constantsSection.items.push({
+        section: constantsSection,
+        label: SectionLabel.CONSTANTS,
+        value: constants,
+        bigText: true,
+      });
+      this.sections.push(constantsSection);
     }
 
     // Section for node data providers.
@@ -1215,14 +1243,25 @@ export class InfoPanel {
   }
 
   private getBodyAttrValue(opNode: OpNode): string | undefined {
+    return this.getAttrValueByKeys(opNode, BODY_ATTR_KEYS);
+  }
+
+  private getConstantsAttrValue(opNode: OpNode): string | undefined {
+    return this.getAttrValueByKeys(opNode, CONSTANTS_ATTR_KEYS);
+  }
+
+  private getAttrValueByKeys(
+    opNode: OpNode,
+    lowerCaseKeys: readonly string[],
+  ): string | undefined {
     const attrs = opNode.attrs || {};
     const attrKeysByLowerCase = new Map<string, string>();
     for (const key of Object.keys(attrs)) {
       attrKeysByLowerCase.set(key.toLowerCase(), key);
     }
 
-    for (const bodyAttrKey of BODY_ATTR_KEYS) {
-      const key = attrKeysByLowerCase.get(bodyAttrKey);
+    for (const lowerCaseKey of lowerCaseKeys) {
+      const key = attrKeysByLowerCase.get(lowerCaseKey);
       if (!key) {
         continue;
       }

@@ -100,6 +100,34 @@ describe('InfoPanel', () => {
     expect(getTextContent()).not.toContain('Body');
   });
 
+  // Body must render only in its dedicated section, not also as a raw attribute.
+  it('should_not_duplicate_body_in_attributes_section_when_node_has_body_attr', () => {
+    const body = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
+    pane.modelGraph = createModelGraph(createOpNode({body}));
+    fixture = createComponent();
+
+    expect(countOccurrences(getTextContent(), body)).toBe(1);
+  });
+
+  it('should_show_constants_section_when_node_has_mdbg_constants_attr', () => {
+    const constants = 'input 1: %c10 = arith.constant 10 : index';
+    pane.modelGraph = createModelGraph(createOpNode({mdbg_constants: constants}));
+    fixture = createComponent();
+
+    const textContent = getTextContent();
+    expect(textContent).toContain('Constants');
+    expect(textContent).toContain(constants);
+    // Rendered in its own section only, not also as a raw attribute.
+    expect(countOccurrences(textContent, constants)).toBe(1);
+  });
+
+  it('should_not_show_constants_section_when_node_has_no_mdbg_constants_attr', () => {
+    pane.modelGraph = createModelGraph(createOpNode({iterator_types: '[]'}));
+    fixture = createComponent();
+
+    expect(getTextContent()).not.toContain('Constants');
+  });
+
   function createComponent(): ComponentFixture<InfoPanel> {
     const fixture = TestBed.createComponent(InfoPanel);
     fixture.componentInstance.paneId = 'pane_1';
@@ -111,6 +139,19 @@ describe('InfoPanel', () => {
     return fixture.nativeElement.textContent;
   }
 });
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle === '') {
+    return 0;
+  }
+  let count = 0;
+  let index = haystack.indexOf(needle);
+  while (index !== -1) {
+    count++;
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+  return count;
+}
 
 function createOpNode(attrs: Record<string, string>): OpNode {
   return {
