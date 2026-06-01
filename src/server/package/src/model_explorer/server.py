@@ -64,7 +64,13 @@ _observer_lock = threading.Lock()
 
 _VALID_FOCUS_MODES = {'single', 'union', 'inter-seed'}
 _VALID_CONTEXTS = {'none', 'upstream', 'downstream', 'both'}
-_VALID_CONTEXT_DEPTHS = {'0', '1', '2', 'all'}
+
+
+def _is_valid_context_depth(context_depth: str) -> bool:
+  if context_depth == 'all':
+    return True
+  # isdigit alone accepts non-ASCII digits (e.g. superscripts) the CLI rejects.
+  return context_depth.isascii() and context_depth.isdigit()
 
 
 def _has_legacy_dataflow_params(args) -> bool:
@@ -83,8 +89,8 @@ def _validate_context_params(context: str, context_depth: str) -> str | None:
     return (
         'Invalid context; expected one of: none, upstream, downstream, both.'
     )
-  if context_depth not in _VALID_CONTEXT_DEPTHS:
-    return 'Invalid context_depth; expected one of: 0, 1, 2, all.'
+  if not _is_valid_context_depth(context_depth):
+    return 'Invalid context_depth; expected a non-negative integer or "all".'
   return None
 
 

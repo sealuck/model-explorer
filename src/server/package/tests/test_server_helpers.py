@@ -97,6 +97,23 @@ def test_validate_focus_request_rejects_invalid_context_params():
   assert 'Invalid context_depth' in depth_error
 
 
+def test_validate_focus_request_accepts_arbitrary_nonnegative_depth():
+  # Depths beyond the legacy 0/1/2 set are valid; the CLI accepts any integer.
+  for depth in ('0', '1', '2', '3', '7', '42', 'all'):
+    assert (
+        _validate_focus_request(['%a'], 'single', 'downstream', depth, {})
+        is None
+    )
+
+
+def test_validate_focus_request_rejects_negative_or_noninteger_depth():
+  # Only non-negative integers or 'all' are valid; reject the rest loudly.
+  for depth in ('-1', '1.5', 'two', ''):
+    error = _validate_focus_request(['%a'], 'single', 'downstream', depth, {})
+    assert error is not None
+    assert 'Invalid context_depth' in error
+
+
 def test_parse_node_data_paths_accepts_comma_and_colon_separators():
   assert _parse_node_data_paths('/tmp/a.json, /tmp/b.json:/tmp/c.json') == [
       '/tmp/a.json',
