@@ -50,6 +50,9 @@ from .extension_manager import ExtensionManager
 from .file_change_handler import FileChangeHandler
 from .server_directive_dispatcher import ServerDirectiveDispatcher
 from .server_director import ServerDirector
+from .mdbg_fx_adapter import (
+    get_cached_graph_json_path as get_cached_fx_graph_json_path,
+)
 from .mdbg_mlir_adapter import get_cached_graph_json_path
 from .utils import convert_adapter_response
 
@@ -158,9 +161,13 @@ def _build_seed_roles(data: dict, node_ssas: str) -> dict:
 
 
 def _resolve_mdbg_graph_path(graph_path: str) -> str:
-  # Resolve .mlir path to the cached graph JSON from the earlier translate.
+  # Resolve a .mlir/.fx source to the cached graph JSON from the earlier convert.
   if graph_path.endswith('.mlir'):
     cached = get_cached_graph_json_path(graph_path)
+    if cached:
+      return cached
+  elif graph_path.endswith('.fx'):
+    cached = get_cached_fx_graph_json_path(graph_path)
     if cached:
       return cached
   return graph_path
