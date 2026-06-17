@@ -109,6 +109,19 @@ select {
   background-color: var(--me-surface-container-low-color);
 }
 
+.seed-input {
+  flex: 1;
+  width: auto;
+  min-width: 60px;
+  height: 22px;
+  border: 0;
+  padding: 2px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  outline: none;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

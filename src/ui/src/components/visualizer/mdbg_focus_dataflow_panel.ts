@@ -93,6 +93,7 @@ export class MdbgFocusDataflowPanelComponent {
   chipElements!: QueryList<ElementRef<HTMLElement>>;
 
   readonly nodesSsas = new FormControl<string>('', {nonNullable: true});
+  readonly seedInputControl = new FormControl<string>('', {nonNullable: true});
   readonly context = new FormControl<string>('both', {nonNullable: true});
   readonly contextDepth = new FormControl<string>('all', {nonNullable: true});
 
@@ -188,6 +189,31 @@ export class MdbgFocusDataflowPanelComponent {
     this.importWarnings = [];
     this.clearTokens();
     this.changeDetectorRef.markForCheck();
+  }
+
+  commitSeedInput(): void {
+    const seedInput = this.seedInputControl.value.trim();
+    if (seedInput === '') {
+      return;
+    }
+
+    const result = importFromLines([seedInput], this.getOutputNodeSsas());
+    for (const ssa of result.resolved) {
+      this.appendToken(ssa);
+    }
+
+    this.importWarnings = result.unresolved;
+    this.seedInputControl.setValue('');
+    this.changeDetectorRef.markForCheck();
+  }
+
+  onSeedInputBackspace(): void {
+    if (this.seedInputControl.value !== '' || this.chipList.length === 0) {
+      return;
+    }
+
+    const lastChip = this.chipList[this.chipList.length - 1];
+    this.removeToken(lastChip.token);
   }
 
   getNextOutputSeedLabel(nodeLabel: string): string {

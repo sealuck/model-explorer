@@ -107,6 +107,71 @@ describe('MdbgFocusDataflowPanelComponent', () => {
     ).toEqual(['%val0', '%val1', '%val2']);
   });
 
+  it('should_add_seed_chip_when_input_committed', () => {
+    component.seedInputControl.setValue('%9');
+
+    component.commitSeedInput();
+
+    expect(component.chipList).toEqual([{token: '%9', label: '%9'}]);
+    expect(component.seedInputControl.value).toBe('');
+  });
+
+  it('should_resolve_output_alias_from_text_input', () => {
+    const outputNodes = [0, 1].map((index) => {
+      return {
+        id: `outputs${index}`,
+        label: `outputs${index}`,
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: [
+          {key: 'mdbg_kind', value: 'function_output'},
+          {key: 'mdbg_output_index', value: String(index)},
+          {key: 'mdbg_source_ssa', value: `%val${index}`},
+        ],
+      } as unknown as OpNode;
+    });
+    component.modelGraph = {
+      nodes: outputNodes,
+      nodesById: Object.fromEntries(outputNodes.map((node) => [node.id, node])),
+    } as ModelGraph;
+    component.seedInputControl.setValue('output0');
+
+    component.commitSeedInput();
+
+    expect(component.chipList).toEqual([{token: '%val0', label: '%val0'}]);
+  });
+
+  it('should_report_unresolved_text_input_as_warning', () => {
+    component.seedInputControl.setValue('foo');
+
+    component.commitSeedInput();
+
+    expect(component.importWarnings).toEqual([
+      {line: 'foo', reason: 'unrecognized format'},
+    ]);
+    expect(component.chipList).toEqual([]);
+  });
+
+  it('should_remove_last_chip_on_backspace_when_input_empty', () => {
+    component.appendToken('%0');
+    component.appendToken('%1');
+    component.seedInputControl.setValue('');
+
+    component.onSeedInputBackspace();
+
+    expect(component.chipList).toEqual([{token: '%0', label: '%0'}]);
+  });
+
+  it('should_ignore_empty_input_commit', () => {
+    component.appendToken('%0');
+    component.seedInputControl.setValue('');
+
+    component.commitSeedInput();
+
+    expect(component.chipList).toEqual([{token: '%0', label: '%0'}]);
+  });
+
   it('should_replace_chip_list_on_file_import', () => {
     const fileReader = {
       result: '%1\n%2',

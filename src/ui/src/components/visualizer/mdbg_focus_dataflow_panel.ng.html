@@ -37,7 +37,7 @@ limitations under the License.
 
     <label class="seed-chip-list-section">
       Seeds
-      <div class="chip-container">
+      <div class="chip-container" (click)="seedInput.focus()">
         @for (chip of chipList; track chip.token) {
           <span
               #chipElement
@@ -55,6 +55,15 @@ limitations under the License.
             </button>
           </span>
         }
+        <input
+            #seedInput
+            class="seed-input"
+            type="text"
+            [formControl]="seedInputControl"
+            aria-label="Add seed"
+            placeholder="Type SSA, press Enter"
+            (keydown.enter)="$event.preventDefault(); commitSeedInput()"
+            (keydown.backspace)="onSeedInputBackspace()">
       </div>
     </label>
 
