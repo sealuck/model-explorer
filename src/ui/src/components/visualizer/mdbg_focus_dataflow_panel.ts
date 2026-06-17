@@ -184,6 +184,12 @@ export class MdbgFocusDataflowPanelComponent {
     this.changeDetectorRef.markForCheck();
   }
 
+  handleClearSeeds(): void {
+    this.importWarnings = [];
+    this.clearTokens();
+    this.changeDetectorRef.markForCheck();
+  }
+
   getNextOutputSeedLabel(nodeLabel: string): string {
     const existingChipCount = this.chipList.filter((chip) =>
       chip.label.startsWith(`${nodeLabel} #`),

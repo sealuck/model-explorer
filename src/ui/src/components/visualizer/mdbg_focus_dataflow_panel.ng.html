@@ -58,6 +58,16 @@ limitations under the License.
       </div>
     </label>
 
+    <button
+        mat-flat-button
+        color="primary"
+        class="panel-action-button clear-seeds-button"
+        type="button"
+        [disabled]="chipList.length === 0"
+        (click)="handleClearSeeds()">
+      Clear Seeds
+    </button>
+
     @if (importWarnings.length > 0) {
       <div class="import-warning">
         Unresolved import lines:
@@ -86,6 +96,7 @@ limitations under the License.
 
     <button mat-flat-button
         color="primary"
+        class="panel-action-button"
         type="button"
         [disabled]="!canFocus"
         (click)="handleClickFocus()">

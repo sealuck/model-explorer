@@ -139,6 +139,45 @@ describe('MdbgFocusDataflowPanelComponent', () => {
     ]);
   });
 
+  it('should_clear_all_seeds_when_clear_button_clicked', () => {
+    component.appendToken('%0');
+    component.appendToken('%1');
+    fixture.detectChanges();
+
+    component.handleClearSeeds();
+    fixture.detectChanges();
+
+    expect(component.chipList).toEqual([]);
+    expect(component.nodeSsas).toEqual([]);
+  });
+
+  it('should_disable_clear_button_when_no_seeds', () => {
+    let clearSeedsButton = fixture.nativeElement.querySelector(
+      '.clear-seeds-button',
+    ) as HTMLButtonElement;
+
+    expect(clearSeedsButton.disabled).toBeTrue();
+
+    component.appendToken('%0');
+    fixture.detectChanges();
+    clearSeedsButton = fixture.nativeElement.querySelector(
+      '.clear-seeds-button',
+    ) as HTMLButtonElement;
+
+    expect(clearSeedsButton.disabled).toBeFalse();
+  });
+
+  it('should_clear_import_warnings_when_seeds_cleared', () => {
+    component.importWarnings = [{line: 'x', reason: 'y'}];
+    component.appendToken('%0');
+    fixture.detectChanges();
+
+    component.handleClearSeeds();
+    fixture.detectChanges();
+
+    expect(component.importWarnings).toEqual([]);
+  });
+
   it('should_render_output_seed_chip_label_instead_of_token', () => {
     const token = 'nodeId:foo.mlir:1:1::outputs3';
 

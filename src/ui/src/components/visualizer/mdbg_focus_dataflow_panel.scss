@@ -176,6 +176,14 @@ button {
   align-self: flex-end;
 }
 
+// Focus and Clear Seeds share one width/style so they line up right-aligned,
+// equal-sized, single-line, and same color.
+.panel-action-button {
+  align-self: flex-end;
+  width: 120px;
+  white-space: nowrap;
+}
+
 .import-button {
   align-self: stretch;
   width: 100%;
