@@ -20,73 +20,16 @@ limitations under the License.
   <div class="header">Focus Dataflow</div>
 
   <form class="content" (submit)="$event.preventDefault()">
-    <input
-        #fileInput
-        type="file"
-        accept=".txt"
-        hidden
-        (change)="onFileSelected($event)">
-
-    <button
-        mat-stroked-button
-        class="import-button import-seeds-section"
-        type="button"
-        (click)="fileInput.click()">
-      Import seeds from file
-    </button>
-
-    <label class="seed-chip-list-section">
-      Seeds
-      <div class="chip-container" (click)="seedInput.focus()">
-        @for (chip of chipList; track chip.token) {
-          <span
-              #chipElement
-              class="chip"
-              [class.chip-added]="addedChips.has(chip.token)"
-              [attr.data-token]="chip.token"
-              [attr.title]="chip.token">
-            <span class="chip-label">{{chip.label}}</span>
-            <button
-                class="chip-remove"
-                type="button"
-                aria-label="Remove seed"
-                (click)="removeToken(chip.token)">
-              &times;
-            </button>
-          </span>
-        }
-        <input
-            #seedInput
-            class="seed-input"
-            type="text"
-            [formControl]="seedInputControl"
-            aria-label="Add seed"
-            placeholder="Type SSA, press Enter"
-            (keydown.enter)="$event.preventDefault(); commitSeedInput()"
-            (keydown.backspace)="onSeedInputBackspace()">
-      </div>
-    </label>
-
-    <button
-        mat-flat-button
-        color="primary"
-        class="panel-action-button clear-seeds-button"
-        type="button"
-        [disabled]="chipList.length === 0"
-        (click)="handleClearSeeds()">
-      Clear Seeds
-    </button>
-
-    @if (importWarnings.length > 0) {
-      <div class="import-warning">
-        Unresolved import lines:
-        <ul>
-          @for (warning of importWarnings; track $index) {
-            <li>{{warning.line}}: {{warning.reason}}</li>
-          }
-        </ul>
-      </div>
-    }
+    <mdbg-ssa-chip-box
+        boxLabel="Seeds"
+        importButtonText="Import seeds from file"
+        clearButtonText="Clear Seeds"
+        inputAriaLabel="Add seed"
+        inputPlaceholder="Type SSA, press Enter"
+        removeAriaLabel="Remove seed"
+        [outputNodeSsas]="outputNodeSsas"
+        (fileImported)="handleImportedSeeds()">
+    </mdbg-ssa-chip-box>
 
     <label>
       Context

@@ -146,11 +146,14 @@ const SIDE_PANEL_WIDTH_ANIMATION_DURATION = 150;
 const DEFAULT_WIDTH = 370;
 const BODY_ATTR_KEYS = ['op_text'];
 const CONSTANTS_ATTR_KEYS = ['mdbg_constants'];
+// Internal attrs that drive behavior but should never be shown to the user.
+const HIDDEN_ATTR_KEYS = ['mdbg_order'];
 // Attr keys rendered in their own dedicated sections; excluded from the generic
 // Attributes section to avoid showing the same value twice.
 const DEDICATED_SECTION_ATTR_KEYS = new Set([
   ...BODY_ATTR_KEYS,
   ...CONSTANTS_ATTR_KEYS,
+  ...HIDDEN_ATTR_KEYS,
 ]);
 
 /** The info panel component that shows info for selected element. */

@@ -22,9 +22,11 @@ import {TestBed} from '@angular/core/testing';
 import {AppService} from './app_service';
 import {ModelGraph, NodeType} from './common/model_graph';
 import {RendererWrapper} from './renderer_wrapper';
+import {SubgraphSelectionService} from './subgraph_selection_service';
 
 describe('RendererWrapper', () => {
   let appService: jasmine.SpyObj<AppService>;
+  let subgraphSelectionService: jasmine.SpyObj<SubgraphSelectionService>;
 
   beforeEach(() => {
     appService = jasmine.createSpyObj<AppService>('AppService', [
@@ -41,11 +43,16 @@ describe('RendererWrapper', () => {
         isGroupNode: false,
       },
     });
+    subgraphSelectionService = jasmine.createSpyObj<SubgraphSelectionService>(
+      'SubgraphSelectionService',
+      ['clearSelection'],
+    );
 
     TestBed.configureTestingModule({
       imports: [RendererWrapper],
       providers: [
         {provide: AppService, useValue: appService},
+        {provide: SubgraphSelectionService, useValue: subgraphSelectionService},
       ],
     });
     TestBed.overrideComponent(RendererWrapper, {
@@ -67,11 +74,30 @@ describe('RendererWrapper', () => {
     expect(componentRecord[legacySingleFocusHandler]).toBeUndefined();
 
     expect(typeof component.handleClickFocusDataflowPanel).toBe('function');
+    expect(typeof component.handleClickExportMlirPanel).toBe('function');
     expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(component.showExportMlirPanel).toBeFalse();
 
     component.handleClickFocusDataflowPanel();
 
     expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(component.showExportMlirPanel).toBeFalse();
+  });
+
+  it('should_keepFocusAndExportPanelsMutuallyExclusive', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+
+    component.handleClickFocusDataflowPanel();
+    component.handleClickExportMlirPanel();
+
+    expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(component.showExportMlirPanel).toBeTrue();
+
+    component.handleClickFocusDataflowPanel();
+
+    expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(component.showExportMlirPanel).toBeFalse();
   });
 
   it('should_openPanelAndAppendToken_when_ctrlClickedOnOpNodeWithSsa', () => {
@@ -104,6 +130,33 @@ describe('RendererWrapper', () => {
     component.handleNodeCtrlClicked('op-node');
 
     expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(appendToken).toHaveBeenCalledOnceWith('%foo');
+  });
+
+  it('should_appendTokenToExportPanel_when_ctrlClickedWithExportActive', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-node': {
+        id: 'op-node',
+        label: 'op node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {
+          'mdbg_source_ssa': '%foo',
+        },
+      },
+    });
+    component.showExportMlirPanel = true;
+    component.showFocusDataflowPanel = false;
+    component.exportMlirPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('op-node');
+
+    expect(component.showFocusDataflowPanel).toBeFalse();
     expect(appendToken).toHaveBeenCalledOnceWith('%foo');
   });
 
@@ -174,6 +227,39 @@ describe('RendererWrapper', () => {
 
     expect(component.showFocusDataflowPanel).toBeFalse();
     expect(appendToken).not.toHaveBeenCalled();
+  });
+
+  it('should_routeBoxSelectedNodesToActiveExportPanel_andClearSelection', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-a': {
+        id: 'op-a',
+        label: 'op a',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {'mdbg_source_ssa': '%a'},
+      },
+      'op-b': {
+        id: 'op-b',
+        label: 'op b',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {'mdbg_source_ssa': '%b'},
+      },
+    });
+    component.showExportMlirPanel = true;
+    component.exportMlirPanelRef = {appendToken} as any;
+
+    component.handleNodesBoxSelected(['op-a', 'op-b']);
+
+    expect(appendToken).toHaveBeenCalledWith('%a');
+    expect(appendToken).toHaveBeenCalledWith('%b');
+    expect(subgraphSelectionService.clearSelection).toHaveBeenCalled();
   });
 
   it('should_useAllDepthForTraceIo', () => {

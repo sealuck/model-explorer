@@ -19,58 +19,24 @@
 import {CommonModule} from '@angular/common';
 import {
   ChangeDetectionStrategy,
-  ChangeDetectorRef,
   Component,
-  ElementRef,
-  inject,
   Input,
-  QueryList,
-  ViewChildren,
+  ViewChild,
 } from '@angular/core';
 import {FormControl, ReactiveFormsModule} from '@angular/forms';
 import {MatButtonModule} from '@angular/material/button';
-import {MatIconModule} from '@angular/material/icon';
 
-import {ModelGraph, ModelNode} from './common/model_graph';
-import {isOpNode, isOutputsNode} from './common/utils';
 import {
-  importFromLines,
+  getOutputNodeSsas,
+} from './mdbg_graph_attrs';
+import {
+  MdbgSsaChipBoxComponent,
+  SsaChip,
+} from './mdbg_ssa_chip_box';
+import {
   SsaFileImportUnresolvedLine,
 } from './ssa_file_importer';
-
-const SSA_ATTR_KEY = 'mdbg_source_ssa';
-
-export interface SeedChip {
-  token: string;
-  label: string;
-}
-
-function readAttr(node: ModelNode, key: string): string | undefined {
-  if (!isOpNode(node) || node.attrs == null) {
-    return undefined;
-  }
-
-  const attrs: unknown = node.attrs;
-  if (Array.isArray(attrs)) {
-    const attr = attrs.find((item) => {
-      if (item == null || typeof item !== 'object') {
-        return false;
-      }
-      return (item as Record<string, unknown>)['key'] === key;
-    });
-    const value =
-      attr != null && typeof attr === 'object'
-        ? (attr as Record<string, unknown>)['value']
-        : undefined;
-    return typeof value === 'string' ? value : undefined;
-  }
-
-  if (typeof attrs !== 'object') {
-    return undefined;
-  }
-  const value = (attrs as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : undefined;
-}
+import {ModelGraph} from './common/model_graph';
 
 /** Toolbar panel for focusing dataflow from source SSA values. */
 @Component({
@@ -79,7 +45,7 @@ function readAttr(node: ModelNode, key: string): string | undefined {
   imports: [
     CommonModule,
     MatButtonModule,
-    MatIconModule,
+    MdbgSsaChipBoxComponent,
     ReactiveFormsModule,
   ],
   templateUrl: './mdbg_focus_dataflow_panel.ng.html',
@@ -89,19 +55,17 @@ function readAttr(node: ModelNode, key: string): string | undefined {
 export class MdbgFocusDataflowPanelComponent {
   @Input({required: true}) modelGraph!: ModelGraph;
   @Input({required: true}) paneId!: string;
-  @ViewChildren('chipElement')
-  chipElements!: QueryList<ElementRef<HTMLElement>>;
+  @ViewChild(MdbgSsaChipBoxComponent)
+  seedChipBox?: MdbgSsaChipBoxComponent;
 
   readonly nodesSsas = new FormControl<string>('', {nonNullable: true});
-  readonly seedInputControl = new FormControl<string>('', {nonNullable: true});
   readonly context = new FormControl<string>('both', {nonNullable: true});
   readonly contextDepth = new FormControl<string>('all', {nonNullable: true});
 
-  readonly chipList: SeedChip[] = [];
-  readonly addedChips = new Set<string>();
-  importWarnings: SsaFileImportUnresolvedLine[] = [];
-
-  private readonly changeDetectorRef = inject(ChangeDetectorRef);
+  private readonly fallbackSeedInputControl = new FormControl<string>('', {
+    nonNullable: true,
+  });
+  private fallbackImportWarnings: SsaFileImportUnresolvedLine[] = [];
 
   handleClickFocus() {
     if (!this.canFocus) {
@@ -139,81 +103,28 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   appendToken(token: string, label?: string): void {
-    const normalizedToken = token.trim();
-    if (normalizedToken === '') {
-      return;
-    }
-    if (this.chipList.some((chip) => chip.token === normalizedToken)) {
-      this.addedChips.delete(normalizedToken);
-      this.changeDetectorRef.markForCheck();
-      return;
-    }
-
-    this.chipList.push({
-      token: normalizedToken,
-      label: label ?? normalizedToken,
-    });
-    this.syncNodesSsas();
-    this.addedChips.add(normalizedToken);
-    this.changeDetectorRef.markForCheck();
-
-    setTimeout(() => {
-      this.scrollChipIntoView(normalizedToken);
-    });
-    setTimeout(() => {
-      this.addedChips.delete(normalizedToken);
-      this.changeDetectorRef.markForCheck();
-    }, 400);
+    this.seedChipBox?.appendToken(token, label);
   }
 
   removeToken(token: string): void {
-    const index = this.chipList.findIndex((chip) => chip.token === token);
-    if (index === -1) {
-      return;
-    }
-
-    this.chipList.splice(index, 1);
-    this.addedChips.delete(token);
-    this.syncNodesSsas();
-    this.changeDetectorRef.markForCheck();
+    this.seedChipBox?.removeToken(token);
   }
 
   clearTokens(): void {
-    this.chipList.length = 0;
-    this.addedChips.clear();
-    this.syncNodesSsas();
-    this.changeDetectorRef.markForCheck();
+    this.seedChipBox?.clearTokens();
   }
 
   handleClearSeeds(): void {
-    this.importWarnings = [];
-    this.clearTokens();
-    this.changeDetectorRef.markForCheck();
+    this.seedChipBox?.handleClearTokens();
   }
 
   commitSeedInput(): void {
-    const seedInput = this.seedInputControl.value.trim();
-    if (seedInput === '') {
-      return;
-    }
-
-    const result = importFromLines([seedInput], this.getOutputNodeSsas());
-    for (const ssa of result.resolved) {
-      this.appendToken(ssa);
-    }
-
-    this.importWarnings = result.unresolved;
-    this.seedInputControl.setValue('');
-    this.changeDetectorRef.markForCheck();
+    this.syncSeedChipBoxInputs();
+    this.seedChipBox?.commitTokenInput();
   }
 
   onSeedInputBackspace(): void {
-    if (this.seedInputControl.value !== '' || this.chipList.length === 0) {
-      return;
-    }
-
-    const lastChip = this.chipList[this.chipList.length - 1];
-    this.removeToken(lastChip.token);
+    this.seedChipBox?.onTokenInputBackspace();
   }
 
   getNextOutputSeedLabel(nodeLabel: string): string {
@@ -224,36 +135,8 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   onFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) {
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const fileText = String(reader.result ?? '');
-      const outputNodeSsas = this.getOutputNodeSsas();
-      const result = importFromLines(fileText.split(/\r?\n/), outputNodeSsas);
-
-      this.clearTokens();
-      for (const ssa of result.resolved) {
-        this.appendToken(ssa);
-      }
-
-      this.importWarnings = result.unresolved;
-      input.value = '';
-      this.changeDetectorRef.markForCheck();
-      this.handleClickFocus();
-    };
-    reader.onerror = () => {
-      this.importWarnings = [
-        {line: file.name, reason: 'unable to read file'},
-      ];
-      input.value = '';
-      this.changeDetectorRef.markForCheck();
-    };
-    reader.readAsText(file);
+    this.syncSeedChipBoxInputs();
+    this.seedChipBox?.onFileSelected(event);
   }
 
   get graphPath(): string {
@@ -261,25 +144,43 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   get nodeSsas(): string[] {
-    return this.chipList.map((chip) => chip.token);
+    return this.seedChipBox?.tokens ?? [];
   }
 
   get canFocus(): boolean {
     return this.graphPath !== '' && this.nodeSsas.length > 0;
   }
 
-  private syncNodesSsas(): void {
-    this.nodesSsas.setValue(this.nodeSsas.join('\n'));
+  get chipList(): SsaChip[] {
+    return this.seedChipBox?.chipList ?? [];
   }
 
-  private scrollChipIntoView(token: string): void {
-    const chip = this.chipElements?.find(
-      (elementRef) => elementRef.nativeElement.dataset['token'] === token,
-    );
-    chip?.nativeElement.scrollIntoView({
-      behavior: 'smooth',
-      block: 'nearest',
-    });
+  get addedChips(): Set<string> {
+    return this.seedChipBox?.addedChips ?? new Set<string>();
+  }
+
+  get seedInputControl(): FormControl<string> {
+    return this.seedChipBox?.tokenInputControl ?? this.fallbackSeedInputControl;
+  }
+
+  get importWarnings(): SsaFileImportUnresolvedLine[] {
+    return this.seedChipBox?.importWarnings ?? this.fallbackImportWarnings;
+  }
+
+  set importWarnings(value: SsaFileImportUnresolvedLine[]) {
+    if (this.seedChipBox) {
+      this.seedChipBox.importWarnings = value;
+    } else {
+      this.fallbackImportWarnings = value;
+    }
+  }
+
+  get outputNodeSsas(): string[] {
+    return this.getOutputNodeSsas();
+  }
+
+  handleImportedSeeds(): void {
+    this.handleClickFocus();
   }
 
   private getNodeDataPathsFromUrl(): string[] {
@@ -302,46 +203,12 @@ export class MdbgFocusDataflowPanelComponent {
   }
 
   private getOutputNodeSsas(): string[] {
-    const outputNodes =
-      this.modelGraph?.nodes?.filter((node) => isOutputsNode(node)) ?? [];
-    const mdbgOutputs = outputNodes
-      .filter((node) => readAttr(node, 'mdbg_kind') === 'function_output')
-      .sort((a, b) => {
-        return (
-          Number(readAttr(a, 'mdbg_output_index') ?? '0') -
-          Number(readAttr(b, 'mdbg_output_index') ?? '0')
-        );
-      })
-      .map((node) => readAttr(node, SSA_ATTR_KEY) ?? '');
+    return getOutputNodeSsas(this.modelGraph);
+  }
 
-    if (mdbgOutputs.length > 0) {
-      return mdbgOutputs;
+  private syncSeedChipBoxInputs(): void {
+    if (this.seedChipBox) {
+      this.seedChipBox.outputNodeSsas = this.outputNodeSsas;
     }
-
-    const graphOutputsNode = outputNodes.find((node) => isOpNode(node));
-    if (!graphOutputsNode || !isOpNode(graphOutputsNode)) {
-      console.warn(
-        'Outputs node not found; output aliases cannot resolve.',
-      );
-      return [];
-    }
-
-    return [...(graphOutputsNode.incomingEdges || [])]
-      .sort((a, b) => {
-        return Number(a.targetNodeInputId) - Number(b.targetNodeInputId);
-      })
-      .map((edge) => {
-        const sourceNode = this.modelGraph.nodesById?.[edge.sourceNodeId];
-        if (!sourceNode || !isOpNode(sourceNode)) {
-          return '';
-        }
-        const sourceSsa = sourceNode.attrs?.[SSA_ATTR_KEY];
-        if (typeof sourceSsa === 'string' && sourceSsa !== '') {
-          return sourceSsa;
-        }
-        const outputSsa =
-          sourceNode.outputsMetadata?.[edge.sourceNodeOutputId]?.[SSA_ATTR_KEY];
-        return typeof outputSsa === 'string' ? outputSsa : '';
-      });
   }
 }

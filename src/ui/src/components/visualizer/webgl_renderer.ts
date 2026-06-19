@@ -249,6 +249,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
   /** Triggered when the "open in popup" button is clickded. */
   @Output() readonly openInPopupClicked = new EventEmitter<PopupPanelData>();
   @Output() readonly nodeCtrlClicked = new EventEmitter<string>();
+  @Output() readonly nodesBoxSelected = new EventEmitter<string[]>();
 
   @ViewChild('container', {static: true}) container!: ElementRef<HTMLElement>;
   @ViewChild('canvas', {static: true}) canvas!: ElementRef<HTMLCanvasElement>;
@@ -1266,22 +1267,42 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
               const maxBx = x + w;
               const maxBy = y + h;
 
-              // Check if they intersect.
-              const aLeftOfB = maxAx < minBx;
-              const aRightOfB = minAx > maxBx;
-              const aAboveB = minAy > maxBy;
-              const aBelowB = maxAy < minBy;
-              const intersect = !(aLeftOfB || aRightOfB || aAboveB || aBelowB);
+              // Only nodes fully enclosed by the drag box are selected.
+              const contained =
+                minBx >= minAx &&
+                maxBx <= maxAx &&
+                minBy >= minAy &&
+                maxBy <= maxAy;
 
-              if (intersect) {
+              if (contained) {
                 coveredNodeIds.push(node.id);
               }
             }
             this.subgraphSelectionService.toggleNodes(coveredNodeIds);
+            this.nodesBoxSelected.emit(
+              this.getCoveredOpNodeIds(coveredNodeIds),
+            );
           }
         },
       );
     }
+  }
+
+  private getCoveredOpNodeIds(nodeIds: string[]): string[] {
+    const opNodeIds: string[] = [];
+    for (const nodeId of nodeIds) {
+      const node = this.curModelGraph.nodesById[nodeId];
+      if (isOpNode(node)) {
+        opNodeIds.push(node.id);
+      } else if (isGroupNode(node) && !node.expanded) {
+        for (const descendantNodeId of node.descendantsOpNodeIds || []) {
+          if (isOpNode(this.curModelGraph.nodesById[descendantNodeId])) {
+            opNodeIds.push(descendantNodeId);
+          }
+        }
+      }
+    }
+    return opNodeIds;
   }
 
   handleMouseLeaveRenderer(event: MouseEvent) {

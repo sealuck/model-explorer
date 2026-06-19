@@ -75,6 +75,14 @@
         opacity: 0.2;
         pointer-events: none;
       }
+
+      // The 20px dataflow/export icons sit tighter than the 18px expand/collapse
+      // icons in the same 24px box; widen the gap to match expand/collapse.
+      &.trace-io,
+      &.focus-dataflow-panel,
+      &.export-mlir-panel {
+        margin: 0 1px;
+      }
     }
 
     mat-icon.toolbar-icon {

@@ -17,15 +17,16 @@ limitations under the License.
 -->
 
 <div class="container">
-  <webgl-renderer 
-      #webglRenderer
-      [modelGraph]="modelGraph"
-      [rendererId]="rendererId"
-      [paneId]="paneId"
-      [rootNodeId]="rootNodeId"
-      [inPopup]="inPopup"
-      (nodeCtrlClicked)="handleNodeCtrlClicked($event)"
-      (openInPopupClicked)="handleOpenOnPopupClicked($event)">
+      <webgl-renderer 
+          #webglRenderer
+          [modelGraph]="modelGraph"
+          [rendererId]="rendererId"
+          [paneId]="paneId"
+          [rootNodeId]="rootNodeId"
+          [inPopup]="inPopup"
+          (nodeCtrlClicked)="handleNodeCtrlClicked($event)"
+          (nodesBoxSelected)="handleNodesBoxSelected($event)"
+          (openInPopupClicked)="handleOpenOnPopupClicked($event)">
   </webgl-renderer>
 
   @if (showToolBar) {
@@ -146,6 +147,7 @@ limitations under the License.
           [bubble]="helpFocusDataflowPanel"
           [overlaySize]="helpPopupSize"
           [hoverDelayMs]="10"
+          [class.enabled]="showFocusDataflowPanel"
           (click)="handleClickFocusDataflowPanel()">
         <mat-icon class="toolbar-icon focus-dataflow-panel">
           hub
@@ -154,6 +156,21 @@ limitations under the License.
       <ng-template #helpFocusDataflowPanel>
         <div class="model-explorer-help-popup">
           Focus Dataflow
+        </div>
+      </ng-template>
+      <div class="mat-icon-container export-mlir-panel"
+          [bubble]="helpExportMlirPanel"
+          [overlaySize]="helpPopupSize"
+          [hoverDelayMs]="10"
+          [class.enabled]="showExportMlirPanel"
+          (click)="handleClickExportMlirPanel()">
+        <mat-icon class="toolbar-icon export-mlir-panel">
+          description
+        </mat-icon>
+      </div>
+      <ng-template #helpExportMlirPanel>
+        <div class="model-explorer-help-popup">
+          Export MLIR
         </div>
       </ng-template>
       <div class="vertical-divider"></div>
@@ -222,6 +239,13 @@ limitations under the License.
           [modelGraph]="modelGraph"
           [paneId]="paneId">
       </mdbg-focus-dataflow-panel>
+    }
+    @if (showExportMlirPanel) {
+      <mdbg-export-mlir-panel
+          [class.pushed-down]="showSubgraphBreadcrumbs"
+          [modelGraph]="modelGraph"
+          [paneId]="paneId">
+      </mdbg-export-mlir-panel>
     }
   }
 

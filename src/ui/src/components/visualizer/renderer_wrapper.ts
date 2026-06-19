@@ -44,9 +44,12 @@ import {
 } from './common/types';
 import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
+import {getNodeToken} from './mdbg_graph_attrs';
+import {MdbgExportMlirPanelComponent} from './mdbg_export_mlir_panel';
 import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
+import {SubgraphSelectionService} from './subgraph_selection_service';
 import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
 import {ViewOnNode} from './view_on_node';
 import {WebglRenderer} from './webgl_renderer';
@@ -63,6 +66,7 @@ import {WebglRenderer} from './webgl_renderer';
     MatIconModule,
     MatMenuModule,
     MatTooltipModule,
+    MdbgExportMlirPanelComponent,
     MdbgFocusDataflowPanelComponent,
     ReactiveFormsModule,
     SearchBar,
@@ -87,6 +91,8 @@ export class RendererWrapper {
   @ViewChild('webglRenderer') webglRenderer?: WebglRenderer;
   @ViewChild(MdbgFocusDataflowPanelComponent)
   focusDataflowPanelRef?: MdbgFocusDataflowPanelComponent;
+  @ViewChild(MdbgExportMlirPanelComponent)
+  exportMlirPanelRef?: MdbgExportMlirPanelComponent;
 
   readonly helpPopupSize: OverlaySizeConfig = {
     minWidth: 0,
@@ -100,12 +106,14 @@ export class RendererWrapper {
   disableDownloadPngHelpPopup = false;
   transparentPngBackground = new FormControl<boolean>(false);
   showFocusDataflowPanel = false;
+  showExportMlirPanel = false;
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
 
   constructor(
     private readonly appService: AppService,
     private readonly changeDetectorRef: ChangeDetectorRef,
+    private readonly subgraphSelectionService: SubgraphSelectionService,
   ) {
     effect(() => {
       const pane = this.appService.getPaneById(this.paneId);
@@ -172,7 +180,19 @@ export class RendererWrapper {
   }
 
   handleClickFocusDataflowPanel() {
-    this.showFocusDataflowPanel = !this.showFocusDataflowPanel;
+    const nextShow = !this.showFocusDataflowPanel;
+    this.showFocusDataflowPanel = nextShow;
+    if (nextShow) {
+      this.showExportMlirPanel = false;
+    }
+  }
+
+  handleClickExportMlirPanel() {
+    const nextShow = !this.showExportMlirPanel;
+    this.showExportMlirPanel = nextShow;
+    if (nextShow) {
+      this.showFocusDataflowPanel = false;
+    }
   }
 
   handleNodeCtrlClicked(nodeId: string) {
@@ -181,35 +201,46 @@ export class RendererWrapper {
       return;
     }
 
-    let token = `nodeId:${node.id}`;
-    const isFunctionOutput = node.attrs?.['mdbg_kind'] === 'function_output';
-    if (!isFunctionOutput) {
-      const sourceSsa = node.attrs?.['mdbg_source_ssa'];
-      if (typeof sourceSsa === 'string' && sourceSsa !== '') {
-        token = sourceSsa;
+    this.appendNodeToActivePanel(node);
+  }
+
+  handleNodesBoxSelected(nodeIds: string[]) {
+    for (const nodeId of nodeIds) {
+      const node = this.modelGraph.nodesById[nodeId];
+      if (isOpNode(node)) {
+        this.appendNodeToActivePanel(node);
       }
+    }
+    this.subgraphSelectionService.clearSelection();
+  }
+
+  private appendNodeToActivePanel(node: OpNode) {
+    const {token, label} = getNodeToken(node);
+    if (this.showExportMlirPanel) {
+      this.appendToken(this.exportMlirPanelRef, token, label);
+      return;
     }
 
     if (!this.showFocusDataflowPanel) {
       this.showFocusDataflowPanel = true;
       this.changeDetectorRef.detectChanges();
     }
-    const label = isFunctionOutput
-      ? this.getOutputSeedLabel(node)
-      : undefined;
-    if (label === undefined) {
-      this.focusDataflowPanelRef?.appendToken(token);
-    } else {
-      this.focusDataflowPanelRef?.appendToken(token, label);
-    }
+    this.appendToken(this.focusDataflowPanelRef, token, label);
   }
 
-  private getOutputSeedLabel(node: OpNode): string {
-    const separatorIndex = node.id.lastIndexOf('::');
-    if (separatorIndex !== -1) {
-      return node.id.substring(separatorIndex + 2);
+  private appendToken(
+    panel:
+      | MdbgFocusDataflowPanelComponent
+      | MdbgExportMlirPanelComponent
+      | undefined,
+    token: string,
+    label: string | undefined,
+  ) {
+    if (label === undefined) {
+      panel?.appendToken(token);
+    } else {
+      panel?.appendToken(token, label);
     }
-    return node.label || node.id;
   }
 
   handleClickToggleTransparentPngBackground(event: MouseEvent) {
