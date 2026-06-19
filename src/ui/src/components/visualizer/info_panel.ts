@@ -852,15 +852,6 @@ export class InfoPanel {
       label,
       value: `${opNode.label}`,
     });
-    // Node id.
-    label = 'id';
-    nodeSection.items.push({
-      section: nodeSection,
-      label,
-      value: opNode.id,
-      canShowOnNode: true,
-      showOnNode: this.curShowOnOpNodeInfoIds.has(label),
-    });
     // Node namespace.
     label = 'namespace';
     nodeSection.items.push({
