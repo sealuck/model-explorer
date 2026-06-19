@@ -97,7 +97,7 @@ enum SectionLabel {
   LAYER_ATTRS = 'Layer attributes',
   ATTRIBUTES = 'Attributes',
   NODE_DATA_PROVIDERS = 'Node data providers',
-  BODY = 'Body',
+  BODY = 'Op Text',
   CONSTANTS = 'Constants',
   IDENTICAL_GROUPS = 'Identical groups',
   INPUTS = 'inputs',
@@ -144,7 +144,7 @@ interface InputItem {
 const MIN_WIDTH = 64;
 const SIDE_PANEL_WIDTH_ANIMATION_DURATION = 150;
 const DEFAULT_WIDTH = 370;
-const BODY_ATTR_KEYS = ['body', 'region', '__body__', 'body_str'];
+const BODY_ATTR_KEYS = ['op_text'];
 const CONSTANTS_ATTR_KEYS = ['mdbg_constants'];
 // Attr keys rendered in their own dedicated sections; excluded from the generic
 // Attributes section to avoid showing the same value twice.
@@ -893,7 +893,7 @@ export class InfoPanel {
         if (key.startsWith('__')) {
           continue;
         }
-        // Skip keys shown in their own dedicated section (Body, Constants).
+        // Skip keys shown in their own dedicated section (Op Text, Constants).
         if (DEDICATED_SECTION_ATTR_KEYS.has(key.toLowerCase())) {
           continue;
         }

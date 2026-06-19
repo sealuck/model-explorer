@@ -83,30 +83,30 @@ describe('InfoPanel', () => {
     fixture?.destroy();
   });
 
-  it('should_show_body_section_when_node_has_body_attr', () => {
-    const body = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
-    pane.modelGraph = createModelGraph(createOpNode({body}));
+  it('should_show_op_text_section_when_node_has_op_text_attr', () => {
+    const opText = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
+    pane.modelGraph = createModelGraph(createOpNode({op_text: opText}));
     fixture = createComponent();
 
     const textContent = getTextContent();
-    expect(textContent).toContain('Body');
-    expect(textContent).toContain(body);
+    expect(textContent).toContain('Op Text');
+    expect(textContent).toContain(opText);
   });
 
-  it('should_not_show_body_section_when_node_has_no_body_attr', () => {
+  it('should_not_show_op_text_section_when_node_has_no_op_text_attr', () => {
     pane.modelGraph = createModelGraph(createOpNode({iterator_types: '[]'}));
     fixture = createComponent();
 
-    expect(getTextContent()).not.toContain('Body');
+    expect(getTextContent()).not.toContain('Op Text');
   });
 
-  // Body must render only in its dedicated section, not also as a raw attribute.
-  it('should_not_duplicate_body_in_attributes_section_when_node_has_body_attr', () => {
-    const body = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
-    pane.modelGraph = createModelGraph(createOpNode({body}));
+  // Op text must render only in its dedicated section, not also as a raw attribute.
+  it('should_not_duplicate_op_text_in_attributes_section_when_node_has_op_text_attr', () => {
+    const opText = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
+    pane.modelGraph = createModelGraph(createOpNode({op_text: opText}));
     fixture = createComponent();
 
-    expect(countOccurrences(getTextContent(), body)).toBe(1);
+    expect(countOccurrences(getTextContent(), opText)).toBe(1);
   });
 
   it('should_show_constants_section_when_node_has_mdbg_constants_attr', () => {
@@ -128,18 +128,18 @@ describe('InfoPanel', () => {
     expect(getTextContent()).not.toContain('Constants');
   });
 
-  // Constants must render above Body so referenced values read before the body.
-  it('should_show_constants_section_above_body_section_when_node_has_both', () => {
-    const body = 'linalg.yield %in : f32';
+  // Constants must render above Op Text so referenced values read before the op text.
+  it('should_show_constants_section_above_op_text_section_when_node_has_both', () => {
+    const opText = 'linalg.yield %in : f32';
     const constants = 'input 1: %c10 = arith.constant 10 : index';
     pane.modelGraph = createModelGraph(
-      createOpNode({body, mdbg_constants: constants}),
+      createOpNode({op_text: opText, mdbg_constants: constants}),
     );
     fixture = createComponent();
 
     const textContent = getTextContent();
     expect(textContent.indexOf('Constants')).toBeLessThan(
-      textContent.indexOf('Body'),
+      textContent.indexOf('Op Text'),
     );
   });
 
