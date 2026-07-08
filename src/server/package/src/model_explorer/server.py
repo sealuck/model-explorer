@@ -125,41 +125,6 @@ def _parse_node_data_paths(node_data_paths: str) -> list[str]:
   return paths
 
 
-def _attr_matches_any_ssa(value: str, seed_ssas: set[str]) -> bool:
-  parts = [part.strip() for part in value.split(',') if part.strip()]
-  return any(part in seed_ssas for part in parts)
-
-
-def _build_seed_roles(data: dict, node_ssas: str) -> dict:
-  seed_ssas = set()
-  seed_node_ids = set()
-  for token in [ssa.strip() for ssa in node_ssas.split(',') if ssa.strip()]:
-    if token.startswith('nodeId:'):
-      seed_node_ids.add(token[len('nodeId:'):])
-    else:
-      seed_ssas.add(token)
-  seed_roles = {}
-  for graph in data.get('graphs', []):
-    graph_id = graph.get('id', '')
-    results = {}
-    for node in graph.get('nodes', []):
-      if node.get('id', '') in seed_node_ids:
-        results[node.get('id', '')] = {'bgColor': '#4e9af1'}
-        continue
-      for attr in node.get('attrs', []):
-        if attr.get('key') != 'mdbg_source_ssa':
-          continue
-        if _attr_matches_any_ssa(attr.get('value', ''), seed_ssas):
-          results[node.get('id', '')] = {'bgColor': '#4e9af1'}
-          break
-    if results:
-      seed_roles[graph_id] = {
-          'name': 'Seed roles',
-          'results': results,
-      }
-  return seed_roles
-
-
 def _resolve_mdbg_graph_path(graph_path: str) -> str:
   # Resolve a .mlir/.fx source to the cached graph JSON from the earlier convert.
   if graph_path.endswith('.mlir'):
@@ -683,25 +648,13 @@ def start(
 
     from urllib.parse import quote
 
-    try:
-      subgraph_data = json.loads(result.stdout)
-      seed_roles = _build_seed_roles(subgraph_data, ','.join(seeds))
-    except Exception as err:
-      return f'<h3>Error: {err}</h3>'
-
-    # Write focused graph (and seed roles) to a temp dir so Model Explorer can
-    # load them together.
+    # Write focused graph to a temp dir so Model Explorer can load it by path.
     tmp_dir = tempfile.mkdtemp(prefix='mdbg_focus_')
     graph_tmp_path = os.path.join(tmp_dir, 'subgraph.json')
     with open(graph_tmp_path, 'w') as f:
       f.write(result.stdout)
 
     paths = []
-    if seed_roles:
-      seed_roles_path = os.path.join(tmp_dir, 'seed_roles.json')
-      with open(seed_roles_path, 'w') as f:
-        f.write(json.dumps(seed_roles, indent=2))
-      paths.append(seed_roles_path)
     if node_data_paths:
       paths += _parse_node_data_paths(node_data_paths)
 

@@ -1,56 +1,10 @@
-from model_explorer.server import (
-    _build_seed_roles,
-    _parse_node_data_paths,
-    _validate_focus_request,
-)
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
-
-def _sample_graph():
-  return {
-      'graphs': [{
-          'id': 'main',
-          'nodes': [
-              {
-                  'id': 'node-a',
-                  'attrs': [{'key': 'mdbg_source_ssa', 'value': '%a'}],
-              },
-              {
-                  'id': 'node-b',
-                  'attrs': [{'key': 'mdbg_source_ssa', 'value': '%b, %b_alias'}],
-              },
-              {
-                  'id': 'node-c',
-                  'attrs': [{'key': 'mdbg_source_ssa', 'value': '%c'}],
-              },
-              {
-                  'id': 'node-d',
-                  'attrs': [{'key': 'other', 'value': '%a'}],
-              },
-          ],
-      }]
-  }
-
-
-def test_build_seed_roles_marks_single_seed_by_ssa():
-  roles = _build_seed_roles(_sample_graph(), '%a')
-
-  assert roles == {
-      'main': {
-          'name': 'Seed roles',
-          'results': {'node-a': {'bgColor': '#4e9af1'}},
-      }
-  }
-
-
-def test_build_seed_roles_marks_many_seeds_by_ssa_and_node_id():
-  roles = _build_seed_roles(_sample_graph(), '%a,%b_alias,nodeId:node-c')
-
-  assert roles['main']['results'] == {
-      'node-a': {'bgColor': '#4e9af1'},
-      'node-b': {'bgColor': '#4e9af1'},
-      'node-c': {'bgColor': '#4e9af1'},
-  }
-  assert 'node-d' not in roles['main']['results']
+import model_explorer.server as server
+from model_explorer.server import _parse_node_data_paths, _validate_focus_request
 
 
 def test_validate_focus_request_rejects_invalid_mode():
@@ -120,3 +74,73 @@ def test_parse_node_data_paths_accepts_comma_and_colon_separators():
       '/tmp/b.json',
       '/tmp/c.json',
   ]
+
+
+def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path):
+  app = _capture_app(monkeypatch)
+  subgraph = {
+      'graphs': [{
+          'id': 'main',
+          'nodes': [{
+              'id': 'seed',
+              'attrs': [{'key': 'mdbg_seed_role', 'value': 'seed'}],
+          }],
+      }]
+  }
+  accuracy_path = str(tmp_path / 'accuracy.json')
+  extra_path = str(tmp_path / 'extra.json')
+
+  monkeypatch.setattr(server, '_find_mdbg', lambda: '/bin/mdbg')
+
+  def fake_run(args, capture_output, text, timeout):
+    return SimpleNamespace(
+        returncode=0,
+        stdout=json.dumps(subgraph),
+        stderr='',
+    )
+
+  monkeypatch.setattr(server.subprocess, 'run', fake_run)
+
+  response = app.test_client().get(
+      '/focus',
+      query_string={
+          'graph_path': '/tmp/graph.json',
+          'seed': '%seed',
+          'mode': 'single',
+          'node_data_paths': f'{accuracy_path}:{extra_path}',
+      },
+  )
+
+  assert response.status_code == 302
+  data = _redirect_data(response.headers['Location'])
+  assert data['nodeData'] == [accuracy_path, extra_path]
+  assert not any('seed_roles' in path for path in data['nodeData'])
+
+  graph_path = Path(data['models'][0]['url'])
+  assert graph_path.name == 'subgraph.json'
+  assert json.loads(graph_path.read_text()) == subgraph
+  assert not (graph_path.parent / 'seed_roles.json').exists()
+
+
+def _capture_app(monkeypatch):
+  captured = {}
+
+  def fake_run(self, *args, **kwargs):
+    captured['app'] = self
+
+  monkeypatch.setattr(server, '_is_port_in_use', lambda host, port: False)
+  monkeypatch.setattr(server, '_check_new_version', lambda *args, **kwargs: {})
+  monkeypatch.setattr(server.Flask, 'run', fake_run)
+
+  server.start(
+      port=9000,
+      no_open_in_browser=True,
+      skip_health_check=True,
+      extensions=[],
+  )
+  return captured['app']
+
+
+def _redirect_data(location: str) -> dict:
+  query = parse_qs(urlparse(location).query)
+  return json.loads(query['data'][0])

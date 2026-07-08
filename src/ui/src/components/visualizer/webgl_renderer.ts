@@ -118,6 +118,7 @@ import {DragArea} from './drag_area';
 import {genIoTreeData, IoTree} from './io_tree';
 import {NodeDataProviderExtensionService} from './node_data_provider_extension_service';
 import {NodeStylerService} from './node_styler_service';
+import {collectSeedHighlightTargets} from './mdbg_seed_highlights';
 import {SplitPaneService} from './split_pane_service';
 import {SubgraphSelectionService} from './subgraph_selection_service';
 import {SvgTextRendererService} from './svg_text_renderer_service';
@@ -168,6 +169,8 @@ const SUBTLE_OUTPUT_NODE_BODY_OPACITY = 0.95;
 const SUBTLE_OUTPUT_NODE_BG_COLOR = '#dde7f5';
 const SUBTLE_OUTPUT_NODE_BORDER_COLOR = '#5d7ba8';
 const SUBTLE_OUTPUT_NODE_BORDER_WIDTH = 1.5;
+const FOCUS_SEED_NODE_BG_COLOR = '#4e9af1';
+const FOCUS_SEED_NODE_TEXT_COLOR = '#1f1f1f';
 const ZOOM_FIT_ON_NODE_DURATION = 400;
 const EDGE_WIDTH = 1.0;
 const SUBGRAPH_INDICATOR_SIZE = 14;
@@ -952,6 +955,10 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     const initGraphFn = (nodeIdToZoomInto?: string) => {
       this.updateNodesAndEdgesToRender();
       this.renderGraph();
+      this.webglRendererIoHighlightService.updateIncomingAndOutgoingHighlights();
+      this.webglRendererIdenticalLayerService.updateIdenticalLayerIndicators();
+      this.updateNodesStyles();
+      this.webglRendererThreejsService.render();
       this.webglRendererThreejsService.zoomFitGraph(0.9, 0);
 
       const pane = this.appService.getPaneById(this.paneId);
@@ -3324,6 +3331,28 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       );
     } else {
       this.focusOutputNodeHighlights.clearNodeHighlights();
+    }
+
+    const seedHighlightTargetNodeIds = collectSeedHighlightTargets(
+      this.curModelGraph,
+      (nodeId) => this.isNodeRendered(nodeId),
+    );
+    if (seedHighlightTargetNodeIds.length > 0) {
+      this.nodeBodies.updateBgColor(
+        seedHighlightTargetNodeIds,
+        new THREE.Color(FOCUS_SEED_NODE_BG_COLOR),
+      );
+      if (useSvgTextRenderer) {
+        this.updateSvgTextsColor(
+          seedHighlightTargetNodeIds,
+          FOCUS_SEED_NODE_TEXT_COLOR,
+        );
+      } else {
+        this.texts.updateColorInNode(
+          seedHighlightTargetNodeIds,
+          new THREE.Color(FOCUS_SEED_NODE_TEXT_COLOR),
+        );
+      }
     }
   }
 
