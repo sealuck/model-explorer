@@ -159,12 +159,30 @@ def _make_json_response(obj):
 
 def _find_mdbg() -> str | None:
   """Find the mdbg binary; None if not available."""
-  path = os.environ.get('MDBG_BIN')
-  if path and os.path.isfile(path):
-    return path
+  # MDBG is also accepted by the mdbg MLIR adapter. Keep focus extraction and
+  # model conversion on the same binary-discovery contract.
+  for env_var in ('MDBG_BIN', 'MDBG'):
+    path = os.environ.get(env_var)
+    if path and os.path.isfile(path):
+      return path
   path = shutil.which('mdbg')
   if path:
     return path
+
+  # A normal wheel lives in site-packages, so its __file__ is unrelated to the
+  # mdbg checkout. Model Explorer is commonly launched from that checkout (or
+  # one of its subdirectories); search those roots before the source-tree
+  # fallback below.
+  current_dir = os.path.abspath(os.getcwd())
+  while True:
+    candidate = os.path.join(current_dir, 'build', 'bin', 'mdbg')
+    if os.path.isfile(candidate):
+      return candidate
+    parent_dir = os.path.dirname(current_dir)
+    if parent_dir == current_dir:
+      break
+    current_dir = parent_dir
+
   # Infer project root: server.py is 7 levels inside third_party/model-explorer.
   _here = os.path.dirname(os.path.abspath(__file__))
   _root = os.path.normpath(os.path.join(_here, *(['..'] * 7)))

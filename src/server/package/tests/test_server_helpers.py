@@ -4,7 +4,40 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 import model_explorer.server as server
-from model_explorer.server import _parse_node_data_paths, _validate_focus_request
+from model_explorer.server import (
+    _find_mdbg,
+    _parse_node_data_paths,
+    _validate_focus_request,
+)
+
+
+def test_find_mdbg_from_repo_working_directory_after_wheel_install(
+    monkeypatch, tmp_path
+):
+  repo_root = tmp_path / 'repo'
+  mdbg = repo_root / 'build' / 'bin' / 'mdbg'
+  mdbg.parent.mkdir(parents=True)
+  mdbg.touch()
+
+  installed_server = (
+      tmp_path / 'venv' / 'site-packages' / 'model_explorer' / 'server.py'
+  )
+  monkeypatch.setattr(server, '__file__', str(installed_server))
+  monkeypatch.chdir(repo_root)
+  monkeypatch.delenv('MDBG_BIN', raising=False)
+  monkeypatch.delenv('MDBG', raising=False)
+  monkeypatch.setattr(server.shutil, 'which', lambda _: None)
+
+  assert _find_mdbg() == str(mdbg)
+
+
+def test_find_mdbg_accepts_adapter_environment_variable(monkeypatch, tmp_path):
+  mdbg = tmp_path / 'mdbg'
+  mdbg.touch()
+  monkeypatch.delenv('MDBG_BIN', raising=False)
+  monkeypatch.setenv('MDBG', str(mdbg))
+
+  assert _find_mdbg() == str(mdbg)
 
 
 def test_validate_focus_request_rejects_invalid_mode():
@@ -120,6 +153,68 @@ def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path
   assert graph_path.name == 'subgraph.json'
   assert json.loads(graph_path.read_text()) == subgraph
   assert not (graph_path.parent / 'seed_roles.json').exists()
+
+
+def test_focus_route_finds_mdbg_and_runs_multiple_seeds_from_installed_wheel(
+    monkeypatch, tmp_path
+):
+  app = _capture_app(monkeypatch)
+  repo_root = tmp_path / 'repo'
+  mdbg = repo_root / 'build' / 'bin' / 'mdbg'
+  mdbg.parent.mkdir(parents=True)
+  mdbg.touch()
+  monkeypatch.setattr(
+      server,
+      '__file__',
+      str(tmp_path / 'venv' / 'site-packages' / 'model_explorer' / 'server.py'),
+  )
+  monkeypatch.chdir(repo_root)
+  monkeypatch.delenv('MDBG_BIN', raising=False)
+  monkeypatch.delenv('MDBG', raising=False)
+  monkeypatch.setattr(server.shutil, 'which', lambda _: None)
+  captured_args = []
+
+  def fake_run(args, capture_output, text, timeout):
+    captured_args.extend(args)
+    return SimpleNamespace(
+        returncode=0,
+        stdout=json.dumps({'label': 'focused', 'graphs': []}),
+        stderr='',
+    )
+
+  monkeypatch.setattr(server.subprocess, 'run', fake_run)
+
+  response = app.test_client().get(
+      '/focus',
+      query_string=[
+          ('graph_path', '/tmp/graph.json'),
+          ('seed', '%a'),
+          ('seed', '%b'),
+          ('mode', 'union'),
+          ('context', 'both'),
+          ('context_depth', '2'),
+      ],
+  )
+
+  assert response.status_code == 302
+  assert captured_args == [
+      str(mdbg),
+      'dataflow',
+      '--graph',
+      '/tmp/graph.json',
+      '--mode',
+      'union',
+      '--context',
+      'both',
+      '--context-depth',
+      '2',
+      '-o',
+      '-',
+      '--seed',
+      '%a',
+      '--seed',
+      '%b',
+  ]
 
 
 def _capture_app(monkeypatch):
