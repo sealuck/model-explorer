@@ -83,21 +83,73 @@ describe('InfoPanel', () => {
     fixture?.destroy();
   });
 
-  it('should_show_body_section_when_node_has_body_attr', () => {
-    const body = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
-    pane.modelGraph = createModelGraph(createOpNode({body}));
+  it('should_show_op_text_section_when_node_has_op_text_attr', () => {
+    const opText = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
+    pane.modelGraph = createModelGraph(
+      createOpNode({'viewer.operation_text': opText}),
+    );
     fixture = createComponent();
 
     const textContent = getTextContent();
-    expect(textContent).toContain('Body');
-    expect(textContent).toContain(body);
+    expect(textContent).toContain('Op Text');
+    expect(textContent).toContain(opText);
   });
 
-  it('should_not_show_body_section_when_node_has_no_body_attr', () => {
+  it('should_not_show_op_text_section_when_node_has_no_op_text_attr', () => {
     pane.modelGraph = createModelGraph(createOpNode({iterator_types: '[]'}));
     fixture = createComponent();
 
-    expect(getTextContent()).not.toContain('Body');
+    expect(getTextContent()).not.toContain('Op Text');
+  });
+
+  // Op text must render only in its dedicated section, not also as a raw attribute.
+  it('should_not_duplicate_op_text_in_attributes_section_when_node_has_op_text_attr', () => {
+    const opText = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
+    pane.modelGraph = createModelGraph(
+      createOpNode({'viewer.operation_text': opText}),
+    );
+    fixture = createComponent();
+
+    expect(countOccurrences(getTextContent(), opText)).toBe(1);
+  });
+
+  it('should_show_constants_section_when_node_has_viewer_constants_attr', () => {
+    const constants = 'input 1: %c10 = arith.constant 10 : index';
+    pane.modelGraph = createModelGraph(
+      createOpNode({'viewer.constants': constants}),
+    );
+    fixture = createComponent();
+
+    const textContent = getTextContent();
+    expect(textContent).toContain('Constants');
+    expect(textContent).toContain(constants);
+    // Rendered in its own section only, not also as a raw attribute.
+    expect(countOccurrences(textContent, constants)).toBe(1);
+  });
+
+  it('should_not_show_constants_section_without_viewer_constants_attr', () => {
+    pane.modelGraph = createModelGraph(createOpNode({iterator_types: '[]'}));
+    fixture = createComponent();
+
+    expect(getTextContent()).not.toContain('Constants');
+  });
+
+  // Constants must render above Op Text so referenced values read before the op text.
+  it('should_show_constants_section_above_op_text_section_when_node_has_both', () => {
+    const opText = 'linalg.yield %in : f32';
+    const constants = 'input 1: %c10 = arith.constant 10 : index';
+    pane.modelGraph = createModelGraph(
+      createOpNode({
+        'viewer.operation_text': opText,
+        'viewer.constants': constants,
+      }),
+    );
+    fixture = createComponent();
+
+    const textContent = getTextContent();
+    expect(textContent.indexOf('Constants')).toBeLessThan(
+      textContent.indexOf('Op Text'),
+    );
   });
 
   function createComponent(): ComponentFixture<InfoPanel> {
@@ -111,6 +163,19 @@ describe('InfoPanel', () => {
     return fixture.nativeElement.textContent;
   }
 });
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle === '') {
+    return 0;
+  }
+  let count = 0;
+  let index = haystack.indexOf(needle);
+  while (index !== -1) {
+    count++;
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+  return count;
+}
 
 function createOpNode(attrs: Record<string, string>): OpNode {
   return {

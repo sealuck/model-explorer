@@ -79,6 +79,7 @@ import {
   ModelGraphProcessedEvent,
   SyncNavigationModeChangedEvent,
 } from '../visualizer/common/types';
+import {GraphCollection} from '../visualizer/common/input_graph';
 import {
   CONFIG_KEYS_CAN_RERENDER,
   CONFIG_KEYS_SHOULD_RERUN_ADAPTERS,
@@ -487,7 +488,8 @@ export class HomePage implements AfterViewInit {
       disallowVerticalEdgeLabels: this.settingsService.getBooleanValue(
         SETTING_DISALLOW_VERTICAL_EDGE_LABELS,
       ),
-      enableSubgraphSelection: this.urlService.enableSubgraphSelection,
+      enableSubgraphSelection:
+        this.urlService.enableSubgraphSelection || this.hasMdbgGraph(),
       enableExportToResource: this.urlService.enableExportToResource,
       enableExportSelectedNodes: this.urlService.enableExportSelectedNodes,
       exportSelectedNodesButtonLabel:
@@ -525,5 +527,12 @@ export class HomePage implements AfterViewInit {
     } else {
       this.initialUiState = undefined;
     }
+  }
+
+  private hasMdbgGraph(): boolean {
+    const graphCollections = this.loadedGraphCollections() ?? [];
+    return graphCollections.some((collection: GraphCollection) => {
+      return collection.graphs.some((graph) => graph.adapterId === 'mdbg_mlir');
+    });
   }
 }

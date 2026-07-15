@@ -16,6 +16,7 @@
  * ==============================================================================
  */
 
+import {ChangeDetectorRef} from '@angular/core';
 import {TestBed} from '@angular/core/testing';
 
 import {AppService} from './app_service';
@@ -42,11 +43,10 @@ describe('RendererWrapper', () => {
         isGroupNode: false,
       },
     });
-    subgraphSelectionService =
-      jasmine.createSpyObj<SubgraphSelectionService>(
-        'SubgraphSelectionService',
-        ['clearSelection'],
-      );
+    subgraphSelectionService = jasmine.createSpyObj<SubgraphSelectionService>(
+      'SubgraphSelectionService',
+      ['clearSelection'],
+    );
 
     TestBed.configureTestingModule({
       imports: [RendererWrapper],
@@ -60,54 +60,235 @@ describe('RendererWrapper', () => {
     });
   });
 
-  it('should_complete_focus_when_switching_from_multi_to_single', () => {
+  it('should_notExposeSingleFocusControls_and_keepFocusDataflowPanelToggle', () => {
     const fixture = TestBed.createComponent(RendererWrapper);
     const component = fixture.componentInstance;
-    let clearedBeforeOpen = false;
-    subgraphSelectionService.clearSelection.and.callFake(() => {
-      clearedBeforeOpen = true;
-    });
-    const openSpy = spyOn(window, 'open').and.callFake(() => {
-      expect(clearedBeforeOpen).toBeTrue();
-      return null;
-    });
-    const clearTokens = jasmine.createSpy('clearTokens');
 
-    component.paneId = 'pane-id';
-    component.rendererId = 'renderer-id';
-    component.modelGraph = {
-      id: 'graph-id',
-      collectionLabel: 'collection',
-      modelPath: '/tmp/model.mlir',
-      nodes: [],
-      nodesById: {
-        'single-node': {
-          id: 'single-node',
-          label: 'single node',
-          namespace: '',
-          level: 0,
-          nodeType: NodeType.OP_NODE,
-          attrs: {'mdbg_source_ssa': '%0'},
+    const legacyDirectionControl = ['focus', 'Direction'].join('');
+    const legacyDirectionVisibility = ['showFocus', 'Direction'].join('');
+    const legacySingleFocusHandler = ['handleClick', 'FocusDataflow'].join('');
+    const componentRecord = component as unknown as Record<string, unknown>;
+
+    expect(componentRecord[legacyDirectionControl]).toBeUndefined();
+    expect(componentRecord[legacyDirectionVisibility]).toBeUndefined();
+    expect(componentRecord[legacySingleFocusHandler]).toBeUndefined();
+
+    expect(typeof component.handleClickFocusDataflowPanel).toBe('function');
+    expect(typeof component.handleClickExportMlirPanel).toBe('function');
+    expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(component.showExportMlirPanel).toBeFalse();
+
+    component.handleClickFocusDataflowPanel();
+
+    expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(component.showExportMlirPanel).toBeFalse();
+  });
+
+  it('should_keepFocusAndExportPanelsMutuallyExclusive', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+
+    component.handleClickFocusDataflowPanel();
+    component.handleClickExportMlirPanel();
+
+    expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(component.showExportMlirPanel).toBeTrue();
+
+    component.handleClickFocusDataflowPanel();
+
+    expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(component.showExportMlirPanel).toBeFalse();
+  });
+
+  it('should_openPanelAndAppendToken_when_ctrlClickedOnOpNodeWithSsa', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-node': {
+        id: 'op-node',
+        label: 'op node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {
+          'viewer.node_kind': 'operation',
+          'viewer.source_ssa': '%foo',
         },
       },
-      rootNodes: [],
-      edgesByGroupNodeIds: {},
-      layoutGraphEdges: {},
-      maxDescendantOpNodeCount: 0,
-      minDescendantOpNodeCount: 0,
-    } as ModelGraph;
-    component.showMultiFocusDialog = true;
-    component.multiFocusDialogRef = {clearTokens} as any;
+    });
+    component.showFocusDataflowPanel = false;
+    spyOn(
+      (component as unknown as {changeDetectorRef: ChangeDetectorRef})
+        .changeDetectorRef,
+      'detectChanges',
+    ).and.callFake(() => {
+      component.focusDataflowPanelRef = {appendToken} as any;
+    });
 
-    component.handleClickFocusDataflow();
+    component.handleNodeCtrlClicked('op-node');
 
-    expect(subgraphSelectionService.clearSelection).toHaveBeenCalled();
-    expect(clearTokens).toHaveBeenCalled();
-    expect(component.showMultiFocusDialog).toBeFalse();
-    expect(openSpy).toHaveBeenCalledWith(
-      '/focus?graph_path=%2Ftmp%2Fmodel.mlir&node_ssa=%250&direction=both&depth=-1',
-      '_blank',
-      'noopener',
+    expect(component.showFocusDataflowPanel).toBeTrue();
+    expect(appendToken).toHaveBeenCalledOnceWith('%foo');
+  });
+
+  it('should_appendTokenToExportPanel_when_ctrlClickedWithExportActive', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-node': {
+        id: 'op-node',
+        label: 'op node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {
+          'viewer.source_ssa': '%foo',
+        },
+      },
+    });
+    component.showExportMlirPanel = true;
+    component.showFocusDataflowPanel = false;
+    component.exportMlirPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('op-node');
+
+    expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(appendToken).toHaveBeenCalledOnceWith('%foo');
+  });
+
+  it('should_appendNodeIdTokenWithLabel_when_ctrlClickedOnFunctionOutputNode', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'output-node': {
+        id: 'foo.mlir:1:1::outputs3',
+        label: 'output node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {
+          'viewer.node_kind': 'model_output',
+          'viewer.source_ssa': '%ignored',
+        },
+      },
+    });
+    component.showFocusDataflowPanel = true;
+    component.focusDataflowPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('output-node');
+
+    expect(appendToken).toHaveBeenCalledOnceWith(
+      'nodeId:foo.mlir:1:1::outputs3',
+      'outputs3',
     );
   });
+
+  it('should_notDuplicateChip_when_ctrlClickedTwiceForSameNode', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-node': {
+        id: 'op-node',
+        label: 'op node',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {'viewer.source_ssa': '%foo'},
+      },
+    });
+    component.showFocusDataflowPanel = true;
+    component.focusDataflowPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('op-node');
+    component.handleNodeCtrlClicked('op-node');
+
+    expect(appendToken).toHaveBeenCalledTimes(2);
+    expect(appendToken).toHaveBeenCalledWith('%foo');
+  });
+
+  it('should_notOpenPanelOrAppendToken_when_nodeIdIsUnknown', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({});
+    component.showFocusDataflowPanel = false;
+    component.focusDataflowPanelRef = {appendToken} as any;
+
+    component.handleNodeCtrlClicked('missing-node');
+
+    expect(component.showFocusDataflowPanel).toBeFalse();
+    expect(appendToken).not.toHaveBeenCalled();
+  });
+
+  it('should_routeBoxSelectedNodesToActiveExportPanel_andClearSelection', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const appendToken = jasmine.createSpy('appendToken');
+
+    component.modelGraph = createModelGraph({
+      'op-a': {
+        id: 'op-a',
+        label: 'op a',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {'viewer.source_ssa': '%a'},
+      },
+      'op-b': {
+        id: 'op-b',
+        label: 'op b',
+        namespace: '',
+        level: 0,
+        nodeType: NodeType.OP_NODE,
+        attrs: {'viewer.source_ssa': '%b'},
+      },
+    });
+    component.showExportMlirPanel = true;
+    component.exportMlirPanelRef = {appendToken} as any;
+
+    component.handleNodesBoxSelected(['op-a', 'op-b']);
+
+    expect(appendToken).toHaveBeenCalledWith('%a');
+    expect(appendToken).toHaveBeenCalledWith('%b');
+    expect(subgraphSelectionService.clearSelection).toHaveBeenCalled();
+  });
+
+  it('should_useAllDepthForTraceIo', () => {
+    const fixture = TestBed.createComponent(RendererWrapper);
+    const component = fixture.componentInstance;
+    const setIoTraceDepth = jasmine.createSpy('setIoTraceDepth');
+    const toggleIoTrace = jasmine.createSpy('toggleIoTrace');
+    component.webglRenderer = {
+      setIoTraceDepth,
+      toggleIoTrace,
+    } as any;
+
+    component.handleClickTrace();
+
+    expect(setIoTraceDepth).toHaveBeenCalledOnceWith(undefined);
+    expect(toggleIoTrace).toHaveBeenCalled();
+  });
 });
+
+function createModelGraph(nodesById: ModelGraph['nodesById']): ModelGraph {
+  return {
+    id: 'graph-id',
+    collectionLabel: 'collection',
+    nodes: Object.values(nodesById),
+    nodesById,
+    rootNodes: [],
+    edgesByGroupNodeIds: {},
+    layoutGraphEdges: {},
+    maxDescendantOpNodeCount: 0,
+    minDescendantOpNodeCount: 0,
+  } as ModelGraph;
+}

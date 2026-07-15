@@ -36,19 +36,21 @@ import {MatMenuModule} from '@angular/material/menu';
 import {MatTooltipModule} from '@angular/material/tooltip';
 import {Bubble} from '../bubble/bubble';
 import {AppService} from './app_service';
-import {type ModelGraph} from './common/model_graph';
+import {type ModelGraph, type OpNode} from './common/model_graph';
 import {
   PopupPanelData,
   SelectedNodeInfo,
   SubgraphBreadcrumbItem,
 } from './common/types';
-import {isGroupNode, isOpNode, isOutputsNode} from './common/utils';
+import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
-import {MdbgMultiFocusDialogComponent} from './mdbg_multi_focus_dialog';
+import {getNodeToken} from './viewer_graph_attrs';
+import {MdbgExportMlirPanelComponent} from './mdbg_export_mlir_panel';
+import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
-import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
 import {SubgraphSelectionService} from './subgraph_selection_service';
+import {SubgraphBreadcrumbs} from './subgraph_breadcrumbs';
 import {ViewOnNode} from './view_on_node';
 import {WebglRenderer} from './webgl_renderer';
 
@@ -64,7 +66,8 @@ import {WebglRenderer} from './webgl_renderer';
     MatIconModule,
     MatMenuModule,
     MatTooltipModule,
-    MdbgMultiFocusDialogComponent,
+    MdbgExportMlirPanelComponent,
+    MdbgFocusDataflowPanelComponent,
     ReactiveFormsModule,
     SearchBar,
     SnapshotManager,
@@ -86,8 +89,10 @@ export class RendererWrapper {
   @Output() readonly openInPopupClicked = new EventEmitter<PopupPanelData>();
 
   @ViewChild('webglRenderer') webglRenderer?: WebglRenderer;
-  @ViewChild(MdbgMultiFocusDialogComponent)
-  multiFocusDialogRef?: MdbgMultiFocusDialogComponent;
+  @ViewChild(MdbgFocusDataflowPanelComponent)
+  focusDataflowPanelRef?: MdbgFocusDataflowPanelComponent;
+  @ViewChild(MdbgExportMlirPanelComponent)
+  exportMlirPanelRef?: MdbgExportMlirPanelComponent;
 
   readonly helpPopupSize: OverlaySizeConfig = {
     minWidth: 0,
@@ -100,11 +105,8 @@ export class RendererWrapper {
   );
   disableDownloadPngHelpPopup = false;
   transparentPngBackground = new FormControl<boolean>(false);
-  traceDepth = new FormControl<string>('all');
-  readonly focusDirection = new FormControl<string>('both', {
-    nonNullable: true,
-  });
-  showMultiFocusDialog = false;
+  showFocusDataflowPanel = false;
+  showExportMlirPanel = false;
 
   private curSubgraphBreadcrumbs: SubgraphBreadcrumbItem[] = [];
 
@@ -173,67 +175,24 @@ export class RendererWrapper {
   }
 
   handleClickTrace() {
+    this.webglRenderer?.setIoTraceDepth(undefined);
     this.webglRenderer?.toggleIoTrace();
   }
 
-  handleClickFocusDataflow() {
-    const selectedNodeId = this.appService.getPaneById(this.paneId)
-      ?.selectedNodeInfo?.nodeId;
-    if (!selectedNodeId || !this.modelGraph.modelPath) {
-      return;
+  handleClickFocusDataflowPanel() {
+    const nextShow = !this.showFocusDataflowPanel;
+    this.showFocusDataflowPanel = nextShow;
+    if (nextShow) {
+      this.showExportMlirPanel = false;
     }
-    this.clearMultiFocusState();
-
-    const selectedNode = this.modelGraph.nodesById[selectedNodeId];
-    const isFunctionOutput =
-      isOpNode(selectedNode) &&
-      selectedNode.attrs?.['mdbg_kind'] === 'function_output';
-    const sourceSSA =
-      isOpNode(selectedNode) &&
-      typeof selectedNode.attrs?.['mdbg_source_ssa'] === 'string' &&
-      selectedNode.attrs['mdbg_source_ssa'] !== ''
-        ? (selectedNode.attrs['mdbg_source_ssa'] as string)
-        : undefined;
-
-    const params = new URLSearchParams();
-    params.set('graph_path', this.modelGraph.modelPath);
-    if (isFunctionOutput) {
-      params.set('node_id', selectedNode.id);
-    } else if (sourceSSA) {
-      params.set('node_ssa', sourceSSA);
-    } else {
-      params.set('node_id', selectedNode.id);
-    }
-    params.set('direction', this.focusDirection.value);
-    params.set('depth', `${this.parseTraceDepth() ?? -1}`);
-    const retainedOutputNodeIds = this.getGraphOutputNodeIds();
-    if (retainedOutputNodeIds.length > 0) {
-      params.set('retained_output_node_ids', retainedOutputNodeIds.join(','));
-    }
-
-    const nodeDataPaths = this.getNodeDataPathsFromUrl();
-    if (nodeDataPaths.length > 0) {
-      params.set('node_data_paths', nodeDataPaths.join(','));
-    }
-
-    window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
   }
 
-  handleClickMultiFocusDialog() {
-    this.showMultiFocusDialog = !this.showMultiFocusDialog;
-  }
-
-  private clearMultiFocusState(): void {
-    this.subgraphSelectionService.clearSelection();
-    this.multiFocusDialogRef?.clearTokens();
-    this.showMultiFocusDialog = false;
-    this.changeDetectorRef.markForCheck();
-  }
-
-  private getGraphOutputNodeIds(): string[] {
-    return this.modelGraph.nodes
-      .filter((node) => isOutputsNode(node))
-      .map((node) => node.id);
+  handleClickExportMlirPanel() {
+    const nextShow = !this.showExportMlirPanel;
+    this.showExportMlirPanel = nextShow;
+    if (nextShow) {
+      this.showFocusDataflowPanel = false;
+    }
   }
 
   handleNodeCtrlClicked(nodeId: string) {
@@ -242,32 +201,46 @@ export class RendererWrapper {
       return;
     }
 
-    let token = `nodeId:${node.id}`;
-    if (node.attrs?.['mdbg_kind'] !== 'function_output') {
-      const sourceSsa = node.attrs?.['mdbg_source_ssa'];
-      if (typeof sourceSsa === 'string' && sourceSsa !== '') {
-        token = sourceSsa;
+    this.appendNodeToActivePanel(node);
+  }
+
+  handleNodesBoxSelected(nodeIds: string[]) {
+    for (const nodeId of nodeIds) {
+      const node = this.modelGraph.nodesById[nodeId];
+      if (isOpNode(node)) {
+        this.appendNodeToActivePanel(node);
       }
     }
+    this.subgraphSelectionService.clearSelection();
+  }
 
-    if (!this.showMultiFocusDialog) {
-      this.showMultiFocusDialog = true;
+  private appendNodeToActivePanel(node: OpNode) {
+    const {token, label} = getNodeToken(node);
+    if (this.showExportMlirPanel) {
+      this.appendToken(this.exportMlirPanelRef, token, label);
+      return;
+    }
+
+    if (!this.showFocusDataflowPanel) {
+      this.showFocusDataflowPanel = true;
       this.changeDetectorRef.detectChanges();
     }
-    this.multiFocusDialogRef?.appendToken(token);
+    this.appendToken(this.focusDataflowPanelRef, token, label);
   }
 
-  handleTraceDepthChange() {
-    this.webglRenderer?.setIoTraceDepth(this.parseTraceDepth());
-  }
-
-  private parseTraceDepth(): number | undefined {
-    const value = (this.traceDepth.value || '').trim().toLowerCase();
-    if (value === '' || value === 'all') {
-      return undefined;
+  private appendToken(
+    panel:
+      | MdbgFocusDataflowPanelComponent
+      | MdbgExportMlirPanelComponent
+      | undefined,
+    token: string,
+    label: string | undefined,
+  ) {
+    if (label === undefined) {
+      panel?.appendToken(token);
+    } else {
+      panel?.appendToken(token, label);
     }
-    const depth = Number(value);
-    return Number.isFinite(depth) && depth >= 0 ? Math.floor(depth) : undefined;
   }
 
   handleClickToggleTransparentPngBackground(event: MouseEvent) {
@@ -280,12 +253,6 @@ export class RendererWrapper {
 
   getActiveSelectedNodeInfo(): SelectedNodeInfo | undefined {
     return this.webglRenderer?.getActiveSelectedNodeInfo();
-  }
-
-  get canFocusDataflow(): boolean {
-    const selectedNodeId = this.appService.getPaneById(this.paneId)
-      ?.selectedNodeInfo?.nodeId;
-    return !!selectedNodeId && !!this.modelGraph.modelPath;
   }
 
   /** Whether to show the search bar. */
@@ -309,10 +276,6 @@ export class RendererWrapper {
   }
 
   get showDownloadPng(): boolean {
-    return !this.inPopup;
-  }
-
-  get showFocusDirection(): boolean {
     return !this.inPopup;
   }
 
@@ -345,24 +308,5 @@ export class RendererWrapper {
 
   get isTestMode(): boolean {
     return this.appService.testMode;
-  }
-
-  private getNodeDataPathsFromUrl(): string[] {
-    const data = new URLSearchParams(window.location.search).get('data');
-    if (!data) {
-      return [];
-    }
-
-    try {
-      const parsed = JSON.parse(data) as {nodeData?: unknown};
-      if (!Array.isArray(parsed.nodeData)) {
-        return [];
-      }
-      return parsed.nodeData.filter((item): item is string => {
-        return typeof item === 'string' && item.length > 0;
-      });
-    } catch {
-      return [];
-    }
   }
 }

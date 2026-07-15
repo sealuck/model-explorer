@@ -15,52 +15,9 @@
 // ==============================================================================
 
 :host {
-  display: block;
-  position: absolute;
-  top: 56px;
-  left: 12px;
-  width: 260px;
-  z-index: 100;
-
-  &.pushed-down {
-    top: 92px;
-  }
-}
-
-// Matches .container > .section in info_panel.scss exactly.
-.section {
-  padding-bottom: 8px;
-  box-sizing: border-box;
-  color: var(--me-on-surface-color);
-  background-color: var(--me-surface-color);
-  border: 1px solid var(--me-outline-variant-color);
-  border-radius: 4px;
-  outline: 2px solid var(--me-surface-color);
-}
-
-// Matches .container > .section > .header in info_panel.scss exactly.
-.header {
-  display: flex;
-  align-items: center;
-  font-weight: 700;
-  padding: 6px 12px 0;
-  text-transform: uppercase;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  color: var(--me-on-surface-color);
-  background-color: var(--me-surface-color);
-  user-select: none;
-}
-
-.content {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 12px 0;
-  box-sizing: border-box;
 }
 
 label {
@@ -71,8 +28,7 @@ label {
   font-size: 11px;
 }
 
-input,
-select {
+input {
   width: 100%;
   border: 1px solid var(--me-outline-variant-color);
   border-radius: 4px;
@@ -87,8 +43,7 @@ select {
   }
 }
 
-input,
-select {
+input {
   height: 24px;
   padding: 2px 6px;
 }
@@ -107,6 +62,19 @@ select {
   padding: 4px;
   color: var(--me-on-surface-color);
   background-color: var(--me-surface-container-low-color);
+}
+
+.token-input {
+  flex: 1;
+  width: auto;
+  min-width: 60px;
+  height: 22px;
+  border: 0;
+  padding: 2px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  outline: none;
 }
 
 .chip {
@@ -174,6 +142,12 @@ select {
 
 button {
   align-self: flex-end;
+}
+
+.panel-action-button {
+  align-self: flex-end;
+  width: 120px;
+  white-space: nowrap;
 }
 
 .import-button {

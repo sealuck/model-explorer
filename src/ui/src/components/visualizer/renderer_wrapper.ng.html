@@ -17,15 +17,16 @@ limitations under the License.
 -->
 
 <div class="container">
-  <webgl-renderer 
-      #webglRenderer
-      [modelGraph]="modelGraph"
-      [rendererId]="rendererId"
-      [paneId]="paneId"
-      [rootNodeId]="rootNodeId"
-      [inPopup]="inPopup"
-      (nodeCtrlClicked)="handleNodeCtrlClicked($event)"
-      (openInPopupClicked)="handleOpenOnPopupClicked($event)">
+      <webgl-renderer 
+          #webglRenderer
+          [modelGraph]="modelGraph"
+          [rendererId]="rendererId"
+          [paneId]="paneId"
+          [rootNodeId]="rootNodeId"
+          [inPopup]="inPopup"
+          (nodeCtrlClicked)="handleNodeCtrlClicked($event)"
+          (nodesBoxSelected)="handleNodesBoxSelected($event)"
+          (openInPopupClicked)="handleOpenOnPopupClicked($event)">
   </webgl-renderer>
 
   @if (showToolBar) {
@@ -142,49 +143,34 @@ limitations under the License.
           </div>
         </div>
       </ng-template>
-      <input class="trace-depth-input"
-          type="text"
-          placeholder="all"
-          title="Trace IO depth. Use all or empty for all ancestors and descendants; use 0, 1, 2... for N hops."
-          [formControl]="traceDepth"
-          (input)="handleTraceDepthChange()">
-      @if (showFocusDirection) {
-        <select class="focus-direction-select" [formControl]="focusDirection">
-          <option value="both">both</option>
-          <option value="backward">upstream</option>
-          <option value="forward">downstream</option>
-        </select>
-      }
-      <div class="mat-icon-container focus-dataflow"
-          [bubble]="helpFocusDataflow"
+      <div class="mat-icon-container focus-dataflow-panel"
+          [bubble]="helpFocusDataflowPanel"
           [overlaySize]="helpPopupSize"
           [hoverDelayMs]="10"
-          [class.disable]="!canFocusDataflow"
-          (click)="handleClickFocusDataflow()">
-        <mat-icon class="toolbar-icon focus-dataflow">
-          account_tree
-        </mat-icon>
-      </div>
-      <ng-template #helpFocusDataflow>
-        <div class="model-explorer-help-popup">
-          Focus dataflow
-          <div class="description">
-            Open selected node's dataflow subgraph using the trace depth field
-          </div>
-        </div>
-      </ng-template>
-      <div class="mat-icon-container multi-focus-dataflow"
-          [bubble]="helpMultiFocusDataflow"
-          [overlaySize]="helpPopupSize"
-          [hoverDelayMs]="10"
-          (click)="handleClickMultiFocusDialog()">
-        <mat-icon class="toolbar-icon multi-focus-dataflow">
+          [class.enabled]="showFocusDataflowPanel"
+          (click)="handleClickFocusDataflowPanel()">
+        <mat-icon class="toolbar-icon focus-dataflow-panel">
           hub
         </mat-icon>
       </div>
-      <ng-template #helpMultiFocusDataflow>
+      <ng-template #helpFocusDataflowPanel>
         <div class="model-explorer-help-popup">
-          Multi-Focus dataflow — open a subgraph centred on multiple SSA values
+          Focus Dataflow
+        </div>
+      </ng-template>
+      <div class="mat-icon-container export-mlir-panel"
+          [bubble]="helpExportMlirPanel"
+          [overlaySize]="helpPopupSize"
+          [hoverDelayMs]="10"
+          [class.enabled]="showExportMlirPanel"
+          (click)="handleClickExportMlirPanel()">
+        <mat-icon class="toolbar-icon export-mlir-panel">
+          description
+        </mat-icon>
+      </div>
+      <ng-template #helpExportMlirPanel>
+        <div class="model-explorer-help-popup">
+          Export MLIR
         </div>
       </ng-template>
       <div class="vertical-divider"></div>
@@ -247,12 +233,19 @@ limitations under the License.
       </ng-container>
     </div>
 
-    @if (showMultiFocusDialog) {
-      <mdbg-multi-focus-dialog
+    @if (showFocusDataflowPanel) {
+      <mdbg-focus-dataflow-panel
           [class.pushed-down]="showSubgraphBreadcrumbs"
           [modelGraph]="modelGraph"
           [paneId]="paneId">
-      </mdbg-multi-focus-dialog>
+      </mdbg-focus-dataflow-panel>
+    }
+    @if (showExportMlirPanel) {
+      <mdbg-export-mlir-panel
+          [class.pushed-down]="showSubgraphBreadcrumbs"
+          [modelGraph]="modelGraph"
+          [paneId]="paneId">
+      </mdbg-export-mlir-panel>
     }
   }
 
