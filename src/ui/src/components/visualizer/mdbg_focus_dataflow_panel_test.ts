@@ -87,9 +87,9 @@ describe('MdbgFocusDataflowPanelComponent', () => {
         level: 0,
         nodeType: NodeType.OP_NODE,
         attrs: [
-          {key: 'mdbg_kind', value: 'function_output'},
-          {key: 'mdbg_output_index', value: String(index)},
-          {key: 'mdbg_source_ssa', value: `%val${index}`},
+          {key: 'viewer.node_kind', value: 'model_output'},
+          {key: 'viewer.model_output_index', value: String(index)},
+          {key: 'viewer.source_ssa', value: `%val${index}`},
         ],
       } as unknown as OpNode;
     });
@@ -125,9 +125,9 @@ describe('MdbgFocusDataflowPanelComponent', () => {
         level: 0,
         nodeType: NodeType.OP_NODE,
         attrs: [
-          {key: 'mdbg_kind', value: 'function_output'},
-          {key: 'mdbg_output_index', value: String(index)},
-          {key: 'mdbg_source_ssa', value: `%val${index}`},
+          {key: 'viewer.node_kind', value: 'model_output'},
+          {key: 'viewer.model_output_index', value: String(index)},
+          {key: 'viewer.source_ssa', value: `%val${index}`},
         ],
       } as unknown as OpNode;
     });

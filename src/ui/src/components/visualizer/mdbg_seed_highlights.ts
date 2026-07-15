@@ -18,10 +18,11 @@
 
 import {ModelGraph, ModelNode} from './common/model_graph';
 import {isGroupNode, isOpNode} from './common/utils';
-import {readAttr} from './mdbg_graph_attrs';
-
-const SEED_ROLE_ATTR = 'mdbg_seed_role';
-const SEED_ROLE_VALUE = 'seed';
+import {
+  FOCUS_ROLE_ATTR_KEY,
+  readAttr,
+  SEED_FOCUS_ROLE,
+} from './viewer_graph_attrs';
 
 export function collectSeedHighlightTargets(
   modelGraph: ModelGraph,
@@ -30,7 +31,10 @@ export function collectSeedHighlightTargets(
   const targetIds = new Set<string>();
 
   for (const node of modelGraph.nodes) {
-    if (!isOpNode(node) || readAttr(node, SEED_ROLE_ATTR) !== SEED_ROLE_VALUE) {
+    if (
+      !isOpNode(node) ||
+      readAttr(node, FOCUS_ROLE_ATTR_KEY) !== SEED_FOCUS_ROLE
+    ) {
       continue;
     }
 

@@ -17,7 +17,14 @@
  */
 
 import {ModelGraph, ModelNode, NodeType, OpNode} from './common/model_graph';
-import {readAttr, splitSsaTokens, SSA_ATTR_KEY} from './mdbg_graph_attrs';
+import {
+  CONSTANTS_ATTR_KEY,
+  GRAPH_ORDER_ATTR_KEY,
+  OPERATION_TEXT_ATTR_KEY,
+  readAttr,
+  splitSsaTokens,
+  SSA_ATTR_KEY,
+} from './viewer_graph_attrs';
 
 const NODE_ID_PREFIX = 'nodeId:';
 const MISSING_ORDER = Number.MAX_SAFE_INTEGER;
@@ -77,7 +84,7 @@ export function stitchMlirFromNodes(nodes: OpNode[]): string {
 
   for (const node of nodes) {
     for (const constant of parseReferencedConstants(
-      readAttr(node, 'mdbg_constants'),
+      readAttr(node, CONSTANTS_ATTR_KEY),
     )) {
       if (emittedConstants.has(constant)) {
         continue;
@@ -86,7 +93,7 @@ export function stitchMlirFromNodes(nodes: OpNode[]): string {
       chunks.push(constant);
     }
 
-    const opText = readAttr(node, 'op_text');
+    const opText = readAttr(node, OPERATION_TEXT_ATTR_KEY);
     if (opText != null && opText !== '') {
       chunks.push(opText);
     }
@@ -133,6 +140,6 @@ function stripConstantBindingLabel(line: string): string {
 }
 
 function readOrder(node: OpNode): number {
-  const order = Number.parseInt(readAttr(node, 'mdbg_order') ?? '', 10);
+  const order = Number.parseInt(readAttr(node, GRAPH_ORDER_ATTR_KEY) ?? '', 10);
   return Number.isFinite(order) ? order : MISSING_ORDER;
 }

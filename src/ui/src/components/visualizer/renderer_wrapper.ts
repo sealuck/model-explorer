@@ -44,7 +44,7 @@ import {
 } from './common/types';
 import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
-import {getNodeToken} from './mdbg_graph_attrs';
+import {getNodeToken} from './viewer_graph_attrs';
 import {MdbgExportMlirPanelComponent} from './mdbg_export_mlir_panel';
 import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
 import {SearchBar} from './search_bar';

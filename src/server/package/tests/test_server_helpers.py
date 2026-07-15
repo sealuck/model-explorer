@@ -83,7 +83,7 @@ def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path
           'id': 'main',
           'nodes': [{
               'id': 'seed',
-              'attrs': [{'key': 'mdbg_seed_role', 'value': 'seed'}],
+              'attrs': [{'key': 'viewer.focus_role', 'value': 'seed'}],
           }],
       }]
   }

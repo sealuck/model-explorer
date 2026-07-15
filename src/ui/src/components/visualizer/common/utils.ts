@@ -99,15 +99,15 @@ export function isOutputsNode(node: ModelNode): boolean {
       }
       const attrRecord = attr as Record<string, unknown>;
       return (
-        attrRecord['key'] === 'mdbg_kind' &&
-        attrRecord['value'] === 'function_output'
+        attrRecord['key'] === 'viewer.node_kind' &&
+        attrRecord['value'] === 'model_output'
       );
     });
   }
 
   return (
     typeof attrs === 'object' &&
-    (attrs as Record<string, unknown>)['mdbg_kind'] === 'function_output'
+    (attrs as Record<string, unknown>)['viewer.node_kind'] === 'model_output'
   );
 }
 

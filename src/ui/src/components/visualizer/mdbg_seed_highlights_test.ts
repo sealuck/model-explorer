@@ -27,8 +27,8 @@ import {collectSeedHighlightTargets} from './mdbg_seed_highlights';
 
 describe('collectSeedHighlightTargets', () => {
   it('returns rendered seed op nodes', () => {
-    const seed = createOp('seed', {'mdbg_seed_role': 'seed'});
-    const nonSeed = createOp('non-seed', {'mdbg_seed_role': 'other'});
+    const seed = createOp('seed', {'viewer.focus_role': 'seed'});
+    const nonSeed = createOp('non-seed', {'viewer.focus_role': 'other'});
     const graph = createGraph([seed, nonSeed]);
 
     expect(
@@ -40,7 +40,7 @@ describe('collectSeedHighlightTargets', () => {
     const root = createGroup('root');
     const inner = createGroup('inner', 'root');
     const seedAttrs = [
-      {'key': 'mdbg_seed_role', 'value': 'seed'},
+      {'key': 'viewer.focus_role', 'value': 'seed'},
     ] as unknown as OpNode['attrs'];
     const seed = createOp(
       'seed',
@@ -49,7 +49,7 @@ describe('collectSeedHighlightTargets', () => {
     );
     const siblingSeed = createOp(
       'sibling-seed',
-      {'mdbg_seed_role': 'seed'},
+      {'viewer.focus_role': 'seed'},
       'inner',
     );
     const graph = createGraph([root, inner, seed, siblingSeed]);
@@ -62,7 +62,7 @@ describe('collectSeedHighlightTargets', () => {
   it('prefers the closest rendered ancestor group', () => {
     const root = createGroup('root');
     const inner = createGroup('inner', 'root');
-    const seed = createOp('seed', {'mdbg_seed_role': 'seed'}, 'inner');
+    const seed = createOp('seed', {'viewer.focus_role': 'seed'}, 'inner');
     const graph = createGraph([root, inner, seed]);
 
     expect(

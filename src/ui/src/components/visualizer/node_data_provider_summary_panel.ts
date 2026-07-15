@@ -780,7 +780,7 @@ export class NodeDataProviderSummaryPanel implements OnChanges {
         outgoingEdges.some((edge) => edge.targetNodeId === 'GraphOutputs');
       const graphNode = this.curModelGraph.nodesById[nodeId] as OpNode;
       const sourceSsa =
-        (graphNode.attrs?.['mdbg_source_ssa'] as string) || undefined;
+        (graphNode.attrs?.['viewer.source_ssa'] as string) || undefined;
       this.curRows.push({
         id: nodeId,
         index: i,

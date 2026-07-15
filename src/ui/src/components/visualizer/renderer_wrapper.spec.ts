@@ -113,8 +113,8 @@ describe('RendererWrapper', () => {
         level: 0,
         nodeType: NodeType.OP_NODE,
         attrs: {
-          'mdbg_kind': 'operation',
-          'mdbg_source_ssa': '%foo',
+          'viewer.node_kind': 'operation',
+          'viewer.source_ssa': '%foo',
         },
       },
     });
@@ -146,7 +146,7 @@ describe('RendererWrapper', () => {
         level: 0,
         nodeType: NodeType.OP_NODE,
         attrs: {
-          'mdbg_source_ssa': '%foo',
+          'viewer.source_ssa': '%foo',
         },
       },
     });
@@ -173,8 +173,8 @@ describe('RendererWrapper', () => {
         level: 0,
         nodeType: NodeType.OP_NODE,
         attrs: {
-          'mdbg_kind': 'function_output',
-          'mdbg_source_ssa': '%ignored',
+          'viewer.node_kind': 'model_output',
+          'viewer.source_ssa': '%ignored',
         },
       },
     });
@@ -201,7 +201,7 @@ describe('RendererWrapper', () => {
         namespace: '',
         level: 0,
         nodeType: NodeType.OP_NODE,
-        attrs: {'mdbg_source_ssa': '%foo'},
+        attrs: {'viewer.source_ssa': '%foo'},
       },
     });
     component.showFocusDataflowPanel = true;
@@ -241,7 +241,7 @@ describe('RendererWrapper', () => {
         namespace: '',
         level: 0,
         nodeType: NodeType.OP_NODE,
-        attrs: {'mdbg_source_ssa': '%a'},
+        attrs: {'viewer.source_ssa': '%a'},
       },
       'op-b': {
         id: 'op-b',
@@ -249,7 +249,7 @@ describe('RendererWrapper', () => {
         namespace: '',
         level: 0,
         nodeType: NodeType.OP_NODE,
-        attrs: {'mdbg_source_ssa': '%b'},
+        attrs: {'viewer.source_ssa': '%b'},
       },
     });
     component.showExportMlirPanel = true;

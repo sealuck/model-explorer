@@ -73,6 +73,11 @@ import {
 import {ExpandableInfoText} from './expandable_info_text';
 import {HoverableLabel} from './hoverable_label';
 import {InfoPanelService} from './info_panel_service';
+import {
+  CONSTANTS_ATTR_KEY,
+  GRAPH_ORDER_ATTR_KEY,
+  OPERATION_TEXT_ATTR_KEY,
+} from './viewer_graph_attrs';
 import {genIoTreeData, IoTree, TreeNode} from './io_tree';
 import {MdbgSsaNavigatorComponent} from './mdbg_ssa_navigator';
 import {NodeDataProviderExtensionService} from './node_data_provider_extension_service';
@@ -144,10 +149,10 @@ interface InputItem {
 const MIN_WIDTH = 64;
 const SIDE_PANEL_WIDTH_ANIMATION_DURATION = 150;
 const DEFAULT_WIDTH = 370;
-const BODY_ATTR_KEYS = ['op_text'];
-const CONSTANTS_ATTR_KEYS = ['mdbg_constants'];
+const BODY_ATTR_KEYS = [OPERATION_TEXT_ATTR_KEY];
+const CONSTANTS_ATTR_KEYS = [CONSTANTS_ATTR_KEY];
 // Internal attrs that drive behavior but should never be shown to the user.
-const HIDDEN_ATTR_KEYS = ['mdbg_order'];
+const HIDDEN_ATTR_KEYS = [GRAPH_ORDER_ATTR_KEY];
 // Attr keys rendered in their own dedicated sections; excluded from the generic
 // Attributes section to avoid showing the same value twice.
 const DEDICATED_SECTION_ATTR_KEYS = new Set([

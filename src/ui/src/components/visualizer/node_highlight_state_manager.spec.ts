@@ -56,14 +56,14 @@ describe('NodeHighlightStateManager', () => {
     expect(tiers.get('GraphOutputs')).toBe('subtle');
   });
 
-  it('should_match_mdbg_function_output_nodes', () => {
+  it('should_match_mdbg_model_output_nodes', () => {
     const node = {
       id: 'output-0',
       label: 'outputs0',
       namespace: '',
       level: 0,
       nodeType: NodeType.OP_NODE,
-      attrs: [{key: 'mdbg_kind', value: 'function_output'}],
+      attrs: [{key: 'viewer.node_kind', value: 'model_output'}],
     } as unknown as ModelNode;
 
     expect(isOutputsNode(node)).toBeTrue();

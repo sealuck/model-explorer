@@ -85,7 +85,9 @@ describe('InfoPanel', () => {
 
   it('should_show_op_text_section_when_node_has_op_text_attr', () => {
     const opText = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
-    pane.modelGraph = createModelGraph(createOpNode({op_text: opText}));
+    pane.modelGraph = createModelGraph(
+      createOpNode({'viewer.operation_text': opText}),
+    );
     fixture = createComponent();
 
     const textContent = getTextContent();
@@ -103,15 +105,19 @@ describe('InfoPanel', () => {
   // Op text must render only in its dedicated section, not also as a raw attribute.
   it('should_not_duplicate_op_text_in_attributes_section_when_node_has_op_text_attr', () => {
     const opText = '%0 = arith.constant 0 : index\nlinalg.yield %0 : index';
-    pane.modelGraph = createModelGraph(createOpNode({op_text: opText}));
+    pane.modelGraph = createModelGraph(
+      createOpNode({'viewer.operation_text': opText}),
+    );
     fixture = createComponent();
 
     expect(countOccurrences(getTextContent(), opText)).toBe(1);
   });
 
-  it('should_show_constants_section_when_node_has_mdbg_constants_attr', () => {
+  it('should_show_constants_section_when_node_has_viewer_constants_attr', () => {
     const constants = 'input 1: %c10 = arith.constant 10 : index';
-    pane.modelGraph = createModelGraph(createOpNode({mdbg_constants: constants}));
+    pane.modelGraph = createModelGraph(
+      createOpNode({'viewer.constants': constants}),
+    );
     fixture = createComponent();
 
     const textContent = getTextContent();
@@ -121,7 +127,7 @@ describe('InfoPanel', () => {
     expect(countOccurrences(textContent, constants)).toBe(1);
   });
 
-  it('should_not_show_constants_section_when_node_has_no_mdbg_constants_attr', () => {
+  it('should_not_show_constants_section_without_viewer_constants_attr', () => {
     pane.modelGraph = createModelGraph(createOpNode({iterator_types: '[]'}));
     fixture = createComponent();
 
@@ -133,7 +139,10 @@ describe('InfoPanel', () => {
     const opText = 'linalg.yield %in : f32';
     const constants = 'input 1: %c10 = arith.constant 10 : index';
     pane.modelGraph = createModelGraph(
-      createOpNode({op_text: opText, mdbg_constants: constants}),
+      createOpNode({
+        'viewer.operation_text': opText,
+        'viewer.constants': constants,
+      }),
     );
     fixture = createComponent();
 

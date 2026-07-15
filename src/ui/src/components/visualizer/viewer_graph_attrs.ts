@@ -18,7 +18,16 @@
 
 import {ModelGraph, ModelNode, NodeType, OpNode} from './common/model_graph';
 
-export const SSA_ATTR_KEY = 'mdbg_source_ssa';
+export const CONSTANTS_ATTR_KEY = 'viewer.constants';
+export const FOCUS_ROLE_ATTR_KEY = 'viewer.focus_role';
+export const GRAPH_ORDER_ATTR_KEY = 'viewer.graph_order';
+export const MODEL_OUTPUT_INDEX_ATTR_KEY = 'viewer.model_output_index';
+export const NODE_KIND_ATTR_KEY = 'viewer.node_kind';
+export const OPERATION_TEXT_ATTR_KEY = 'viewer.operation_text';
+export const SSA_ATTR_KEY = 'viewer.source_ssa';
+
+export const MODEL_OUTPUT_NODE_KIND = 'model_output';
+export const SEED_FOCUS_ROLE = 'seed';
 
 export interface NodeToken {
   token: string;
@@ -63,7 +72,7 @@ function isOutputsNode(node: ModelNode): boolean {
   if (node.label === 'GraphOutputs' || node.label === 'Outputs') {
     return true;
   }
-  return readAttr(node, 'mdbg_kind') === 'function_output';
+  return readAttr(node, NODE_KIND_ATTR_KEY) === MODEL_OUTPUT_NODE_KIND;
 }
 
 export function splitSsaTokens(sourceSsa: string | undefined): string[] {
@@ -74,7 +83,8 @@ export function splitSsaTokens(sourceSsa: string | undefined): string[] {
 }
 
 export function getNodeToken(node: OpNode): NodeToken {
-  const isFunctionOutput = readAttr(node, 'mdbg_kind') === 'function_output';
+  const isFunctionOutput =
+    readAttr(node, NODE_KIND_ATTR_KEY) === MODEL_OUTPUT_NODE_KIND;
   if (isFunctionOutput) {
     return {
       token: `nodeId:${node.id}`,
@@ -93,18 +103,21 @@ export function getNodeToken(node: OpNode): NodeToken {
 export function getOutputNodeSsas(modelGraph: ModelGraph | undefined): string[] {
   const outputNodes =
     modelGraph?.nodes?.filter((node) => isOutputsNode(node)) ?? [];
-  const mdbgOutputs = outputNodes
-    .filter((node) => readAttr(node, 'mdbg_kind') === 'function_output')
+  const viewerOutputs = outputNodes
+    .filter(
+      (node) =>
+        readAttr(node, NODE_KIND_ATTR_KEY) === MODEL_OUTPUT_NODE_KIND,
+    )
     .sort((a, b) => {
       return (
-        Number(readAttr(a, 'mdbg_output_index') ?? '0') -
-        Number(readAttr(b, 'mdbg_output_index') ?? '0')
+        Number(readAttr(a, MODEL_OUTPUT_INDEX_ATTR_KEY) ?? '0') -
+        Number(readAttr(b, MODEL_OUTPUT_INDEX_ATTR_KEY) ?? '0')
       );
     })
     .map((node) => readAttr(node, SSA_ATTR_KEY) ?? '');
 
-  if (mdbgOutputs.length > 0) {
-    return mdbgOutputs;
+  if (viewerOutputs.length > 0) {
+    return viewerOutputs;
   }
 
   const graphOutputsNode = outputNodes.find((node) => isOpNode(node));

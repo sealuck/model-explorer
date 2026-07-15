@@ -44,7 +44,7 @@ interface SsaRow {
   ssa: string;
 }
 
-const SSA_ATTR_KEY = 'mdbg_source_ssa';
+const SSA_ATTR_KEY = 'viewer.source_ssa';
 
 /** Right-sidebar navigator for jumping to nodes by source SSA value. */
 @Component({

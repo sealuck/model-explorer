@@ -27,7 +27,7 @@ import {MatButtonModule} from '@angular/material/button';
 import {setAnchorHref} from 'safevalues/dom';
 
 import {ModelGraph} from './common/model_graph';
-import {getOutputNodeSsas} from './mdbg_graph_attrs';
+import {getOutputNodeSsas} from './viewer_graph_attrs';
 import {buildMlirExport} from './mdbg_mlir_exporter';
 import {MdbgSsaChipBoxComponent} from './mdbg_ssa_chip_box';
 

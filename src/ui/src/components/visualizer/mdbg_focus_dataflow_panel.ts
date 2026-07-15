@@ -26,9 +26,7 @@ import {
 import {FormControl, ReactiveFormsModule} from '@angular/forms';
 import {MatButtonModule} from '@angular/material/button';
 
-import {
-  getOutputNodeSsas,
-} from './mdbg_graph_attrs';
+import {getOutputNodeSsas} from './viewer_graph_attrs';
 import {
   MdbgSsaChipBoxComponent,
   SsaChip,

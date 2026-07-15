@@ -16,8 +16,6 @@
  * ==============================================================================
  */
 
-import {describe, expect, it} from 'vitest';
-
 import {ModelGraph, NodeType, OpNode} from './common/model_graph';
 import {
   buildMlirExport,
@@ -25,7 +23,7 @@ import {
 } from './mdbg_mlir_exporter';
 
 describe('mdbg MLIR exporter', () => {
-  it('sorts selected nodes by mdbg_order without repairing skipped defs', () => {
+  it('sorts selected nodes by viewer.graph_order without repairing skipped defs', () => {
     const graph = createGraph([
       createOp(
         'late',
@@ -71,13 +69,13 @@ describe('mdbg MLIR exporter', () => {
     const one = '%c1 = arith.constant 1 : i32';
     const graph = createGraph([
       createOp('use-zero', '%a', '1', '%a = arith.addi %arg0, %c0 : i32', {
-        mdbg_constants: `input 1: ${zero}`,
+        'viewer.constants': `input 1: ${zero}`,
       }),
       createOp('use-both', '%b', '2', '%b = arith.addi %a, %c1 : i32', {
-        mdbg_constants: [`input 0: ${zero}`, `body: ${one}`].join('\n'),
+        'viewer.constants': [`input 0: ${zero}`, `body: ${one}`].join('\n'),
       }),
       createOp('use-zero-again', '%c', '3', '%c = arith.addi %b, %c0 : i32', {
-        mdbg_constants: `body: ${zero}`,
+        'viewer.constants': `body: ${zero}`,
       }),
     ]);
 
@@ -123,9 +121,9 @@ function createOp(
     level: 0,
     nodeType: NodeType.OP_NODE,
     attrs: {
-      mdbg_source_ssa: sourceSsa,
-      mdbg_order: order,
-      op_text: opText,
+      'viewer.source_ssa': sourceSsa,
+      'viewer.graph_order': order,
+      'viewer.operation_text': opText,
       ...extraAttrs,
     },
   } as OpNode;
