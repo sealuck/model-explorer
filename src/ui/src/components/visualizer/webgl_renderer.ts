@@ -3293,6 +3293,41 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       );
     }
 
+    // Storage overlays are opt-in focus modes. Once the selected Node belongs
+    // to an active Storage, keep its complete Access chain readable by dimming
+    // unrelated Nodes. Other custom overlay kinds retain their old behavior.
+    const dimmingOverlays =
+      this.webglRendererEdgeOverlaysService.curOverlays.filter(
+        (overlay) => overlay.dimNonOverlayNodes === true,
+      );
+    if (dimmingOverlays.length > 0) {
+      const focusNodeIds = new Set<string>();
+      for (const overlay of dimmingOverlays) {
+        for (const nodeId of overlay.nodeIds) {
+          focusNodeIds.add(nodeId);
+        }
+      }
+      const nodeIds = Object.keys(this.curModelGraph.nodesById).filter(
+        (id) => !focusNodeIds.has(id) && this.isNodeRendered(id),
+      );
+      this.nodeBodies.updateOpacity(nodeIds, 0.2);
+      if (useSvgTextRenderer) {
+        this.setSvgTextsOpacity(nodeIds, 0.3);
+      } else {
+        this.texts.updateOpacityInNode(nodeIds, 0.3);
+      }
+      this.groupNodeIcons.updateOpacityInNode(nodeIds, 0.3);
+      this.webglRendererAttrsTableService.attrsTableTexts.updateOpacityInNode(
+        nodeIds,
+        0.3,
+      );
+      this.webglRendererEdgeTextsService.edgeTexts.updateOpacityInNode(
+        nodeIds,
+        0.3,
+      );
+      this.webglRendererIdenticalLayerService.updateOpacity(nodeIds, 0.3);
+    }
+
     const allGraphOutputsNodeIds = Object.keys(this.curModelGraph.nodesById)
       .filter((id) => {
         const node = this.curModelGraph.nodesById[id];

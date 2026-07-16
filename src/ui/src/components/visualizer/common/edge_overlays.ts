@@ -36,6 +36,9 @@ export declare interface EdgeOverlaysData extends TaskData {
 
   /** A list of edge overlays. */
   overlays: EdgeOverlay[];
+
+  /** Whether newly loaded overlays are selected immediately. Defaults true. */
+  selectByDefault?: boolean;
 }
 
 /** An edge overlay. */
@@ -86,15 +89,25 @@ export declare interface EdgeOverlay {
    * selected node.
    */
   visibleEdgeHops?: number;
+
+  /** Dim rendered Nodes outside this overlay while it is active. */
+  dimNonOverlayNodes?: boolean;
 }
 
 /** An edge in the overlay. */
 export declare interface Edge {
+  /** Stable relation identity. */
+  id?: string;
+
   /** The id of the source node. Op node only. */
   sourceNodeId: string;
 
   /** The id of the target node. Op node only. */
   targetNodeId: string;
+
+  /** Exact source and target ports, when supplied by the Graph contract. */
+  sourceNodeOutputId?: string;
+  targetNodeInputId?: string;
 
   /** Label shown on the edge. */
   label?: string;

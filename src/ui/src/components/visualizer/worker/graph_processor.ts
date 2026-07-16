@@ -268,9 +268,11 @@ export class GraphProcessor {
         if (
           node.incomingEdges.find(
             (edge) =>
-              edge.sourceNodeId === sourceNodeId &&
-              edge.sourceNodeOutputId === incomingEdge.sourceNodeOutputId &&
-              edge.targetNodeInputId === incomingEdge.targetNodeInputId,
+              edge.id && incomingEdge.id
+                ? edge.id === incomingEdge.id
+                : edge.sourceNodeId === sourceNodeId &&
+                  edge.sourceNodeOutputId === incomingEdge.sourceNodeOutputId &&
+                  edge.targetNodeInputId === incomingEdge.targetNodeInputId,
           ) == null
         ) {
           node.incomingEdges.push({...incomingEdge});
@@ -283,15 +285,20 @@ export class GraphProcessor {
         if (
           sourceNode.outgoingEdges.find(
             (edge) =>
-              edge.targetNodeId === node.id &&
-              edge.sourceNodeOutputId === incomingEdge.sourceNodeOutputId &&
-              edge.targetNodeInputId === incomingEdge.targetNodeInputId,
+              edge.id && incomingEdge.id
+                ? edge.id === incomingEdge.id
+                : edge.targetNodeId === node.id &&
+                  edge.sourceNodeOutputId === incomingEdge.sourceNodeOutputId &&
+                  edge.targetNodeInputId === incomingEdge.targetNodeInputId,
           ) == null
         ) {
           sourceNode.outgoingEdges.push({
+            id: incomingEdge.id,
+            relationKind: incomingEdge.relationKind,
             targetNodeId: node.id,
             sourceNodeOutputId: incomingEdge.sourceNodeOutputId,
             targetNodeInputId: incomingEdge.targetNodeInputId,
+            metadata: incomingEdge.metadata,
           });
         }
       }

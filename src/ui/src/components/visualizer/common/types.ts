@@ -88,6 +88,12 @@ export interface MetadataItem {
 
 /** An incoming edge in the graph. */
 export declare interface IncomingEdge {
+  /** Stable identity independent of the source/target node pair. */
+  id?: string;
+
+  /** Semantic relation kind. */
+  relationKind?: string;
+
   /** The id of the source node (where the edge comes from). */
   sourceNodeId: string;
 
@@ -106,6 +112,12 @@ export declare interface IncomingEdge {
 
 /** An outgoing edge in the graph. */
 export declare interface OutgoingEdge {
+  /** Stable identity independent of the source/target node pair. */
+  id?: string;
+
+  /** Semantic relation kind. */
+  relationKind?: string;
+
   /** The id of the target node (where the edge connects to). */
   targetNodeId: string;
 
