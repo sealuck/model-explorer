@@ -45,8 +45,8 @@ import {
 import {isGroupNode, isOpNode} from './common/utils';
 import {EdgeOverlaysDropdown} from './edge_overlays_dropdown';
 import {getNodeToken} from './viewer_graph_attrs';
-import {MdbgExportMlirPanelComponent} from './mdbg_export_mlir_panel';
-import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
+import {ViewerExportMlirPanelComponent} from './viewer_export_mlir_panel';
+import {ViewerFocusDataflowPanelComponent} from './viewer_focus_dataflow_panel';
 import {SearchBar} from './search_bar';
 import {SnapshotManager} from './snapshot_manager';
 import {SubgraphSelectionService} from './subgraph_selection_service';
@@ -66,8 +66,8 @@ import {WebglRenderer} from './webgl_renderer';
     MatIconModule,
     MatMenuModule,
     MatTooltipModule,
-    MdbgExportMlirPanelComponent,
-    MdbgFocusDataflowPanelComponent,
+    ViewerExportMlirPanelComponent,
+    ViewerFocusDataflowPanelComponent,
     ReactiveFormsModule,
     SearchBar,
     SnapshotManager,
@@ -89,10 +89,10 @@ export class RendererWrapper {
   @Output() readonly openInPopupClicked = new EventEmitter<PopupPanelData>();
 
   @ViewChild('webglRenderer') webglRenderer?: WebglRenderer;
-  @ViewChild(MdbgFocusDataflowPanelComponent)
-  focusDataflowPanelRef?: MdbgFocusDataflowPanelComponent;
-  @ViewChild(MdbgExportMlirPanelComponent)
-  exportMlirPanelRef?: MdbgExportMlirPanelComponent;
+  @ViewChild(ViewerFocusDataflowPanelComponent)
+  focusDataflowPanelRef?: ViewerFocusDataflowPanelComponent;
+  @ViewChild(ViewerExportMlirPanelComponent)
+  exportMlirPanelRef?: ViewerExportMlirPanelComponent;
 
   readonly helpPopupSize: OverlaySizeConfig = {
     minWidth: 0,
@@ -230,8 +230,8 @@ export class RendererWrapper {
 
   private appendToken(
     panel:
-      | MdbgFocusDataflowPanelComponent
-      | MdbgExportMlirPanelComponent
+      | ViewerFocusDataflowPanelComponent
+      | ViewerExportMlirPanelComponent
       | undefined,
     token: string,
     label: string | undefined,

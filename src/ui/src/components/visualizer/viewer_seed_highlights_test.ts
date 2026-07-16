@@ -23,7 +23,7 @@ import {
   NodeType,
   OpNode,
 } from './common/model_graph';
-import {collectSeedHighlightTargets} from './mdbg_seed_highlights';
+import {collectSeedHighlightTargets} from './viewer_seed_highlights';
 
 describe('collectSeedHighlightTargets', () => {
   it('returns rendered seed op nodes', () => {

@@ -118,7 +118,7 @@ import {DragArea} from './drag_area';
 import {genIoTreeData, IoTree} from './io_tree';
 import {NodeDataProviderExtensionService} from './node_data_provider_extension_service';
 import {NodeStylerService} from './node_styler_service';
-import {collectSeedHighlightTargets} from './mdbg_seed_highlights';
+import {collectSeedHighlightTargets} from './viewer_seed_highlights';
 import {SplitPaneService} from './split_pane_service';
 import {SubgraphSelectionService} from './subgraph_selection_service';
 import {SvgTextRendererService} from './svg_text_renderer_service';

@@ -56,7 +56,7 @@ describe('NodeHighlightStateManager', () => {
     expect(tiers.get('GraphOutputs')).toBe('subtle');
   });
 
-  it('should_match_mdbg_model_output_nodes', () => {
+  it('should_match_viewer_model_output_nodes', () => {
     const node = {
       id: 'output-0',
       label: 'outputs0',

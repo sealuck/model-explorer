@@ -42,16 +42,16 @@ export interface SsaChip {
   label: string;
 }
 
-/** Reusable mdbg SSA chip box with text and .txt import support. */
+/** Reusable Viewer SSA chip box with text and .txt import support. */
 @Component({
   standalone: true,
-  selector: 'mdbg-ssa-chip-box',
+  selector: 'viewer-ssa-chip-box',
   imports: [CommonModule, MatButtonModule, ReactiveFormsModule],
-  templateUrl: './mdbg_ssa_chip_box.ng.html',
-  styleUrls: ['./mdbg_ssa_chip_box.scss'],
+  templateUrl: './viewer_ssa_chip_box.ng.html',
+  styleUrls: ['./viewer_ssa_chip_box.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MdbgSsaChipBoxComponent {
+export class ViewerSsaChipBoxComponent {
   @Input() boxLabel = 'Seeds';
   @Input() importButtonText = 'Import seeds from file';
   @Input() clearButtonText = 'Clear Seeds';

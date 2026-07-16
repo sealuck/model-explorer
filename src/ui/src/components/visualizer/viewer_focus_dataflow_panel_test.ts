@@ -25,21 +25,24 @@ import {
 import {provideNoopAnimations} from '@angular/platform-browser/animations';
 
 import {ModelGraph, NodeType, OpNode} from './common/model_graph';
-import {MdbgFocusDataflowPanelComponent} from './mdbg_focus_dataflow_panel';
+import {ViewerFocusDataflowPanelComponent} from './viewer_focus_dataflow_panel';
 
-describe('MdbgFocusDataflowPanelComponent', () => {
-  let fixture: ComponentFixture<MdbgFocusDataflowPanelComponent>;
-  let component: MdbgFocusDataflowPanelComponent;
+describe('ViewerFocusDataflowPanelComponent', () => {
+  let fixture: ComponentFixture<ViewerFocusDataflowPanelComponent>;
+  let component: ViewerFocusDataflowPanelComponent;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [MdbgFocusDataflowPanelComponent],
+      imports: [ViewerFocusDataflowPanelComponent],
       providers: [provideNoopAnimations()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(MdbgFocusDataflowPanelComponent);
+    fixture = TestBed.createComponent(ViewerFocusDataflowPanelComponent);
     component = fixture.componentInstance;
-    component.modelGraph = {modelPath: '/tmp/model.mlir'} as ModelGraph;
+    component.modelGraph = {
+      id: 'main',
+      modelPath: '/tmp/model.mlir',
+    } as ModelGraph;
     component.paneId = 'pane-id';
     fixture.detectChanges();
   });
@@ -78,7 +81,7 @@ describe('MdbgFocusDataflowPanelComponent', () => {
     expect(getComputedStyle(container).flexWrap).toBe('wrap');
   });
 
-  it('should_enumerate_mdbg_per_output_nodes_by_output_index', () => {
+  it('should_enumerate_viewer_per_output_nodes_by_output_index', () => {
     const outputNodes = [0, 1, 2].map((index) => {
       return {
         id: `outputs${index}`,
@@ -352,6 +355,7 @@ describe('MdbgFocusDataflowPanelComponent', () => {
     expect(params.get('mode')).toBe('inter-seed');
     expect(params.get('context')).toBe('none');
     expect(params.get('context_depth')).toBe('all');
+    expect(params.get('graph_id')).toBe('main');
     expect(params.get('node_data_paths')).toBe('/tmp/node-data.json');
   });
 

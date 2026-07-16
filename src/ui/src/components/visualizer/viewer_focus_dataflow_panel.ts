@@ -28,9 +28,9 @@ import {MatButtonModule} from '@angular/material/button';
 
 import {getOutputNodeSsas} from './viewer_graph_attrs';
 import {
-  MdbgSsaChipBoxComponent,
+  ViewerSsaChipBoxComponent,
   SsaChip,
-} from './mdbg_ssa_chip_box';
+} from './viewer_ssa_chip_box';
 import {
   SsaFileImportUnresolvedLine,
 } from './ssa_file_importer';
@@ -39,22 +39,22 @@ import {ModelGraph} from './common/model_graph';
 /** Toolbar panel for focusing dataflow from source SSA values. */
 @Component({
   standalone: true,
-  selector: 'mdbg-focus-dataflow-panel',
+  selector: 'viewer-focus-dataflow-panel',
   imports: [
     CommonModule,
     MatButtonModule,
-    MdbgSsaChipBoxComponent,
+    ViewerSsaChipBoxComponent,
     ReactiveFormsModule,
   ],
-  templateUrl: './mdbg_focus_dataflow_panel.ng.html',
-  styleUrls: ['./mdbg_focus_dataflow_panel.scss'],
+  templateUrl: './viewer_focus_dataflow_panel.ng.html',
+  styleUrls: ['./viewer_focus_dataflow_panel.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MdbgFocusDataflowPanelComponent {
+export class ViewerFocusDataflowPanelComponent {
   @Input({required: true}) modelGraph!: ModelGraph;
   @Input({required: true}) paneId!: string;
-  @ViewChild(MdbgSsaChipBoxComponent)
-  seedChipBox?: MdbgSsaChipBoxComponent;
+  @ViewChild(ViewerSsaChipBoxComponent)
+  seedChipBox?: ViewerSsaChipBoxComponent;
 
   readonly nodesSsas = new FormControl<string>('', {nonNullable: true});
   readonly context = new FormControl<string>('both', {nonNullable: true});
@@ -72,6 +72,7 @@ export class MdbgFocusDataflowPanelComponent {
 
     const params = new URLSearchParams();
     params.set('graph_path', this.graphPath);
+    params.set('graph_id', this.modelGraph.id);
     for (const seed of this.nodeSsas) {
       params.append('seed', seed);
     }

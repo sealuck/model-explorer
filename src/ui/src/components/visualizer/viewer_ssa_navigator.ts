@@ -49,18 +49,18 @@ const SSA_ATTR_KEY = 'viewer.source_ssa';
 /** Right-sidebar navigator for jumping to nodes by source SSA value. */
 @Component({
   standalone: true,
-  selector: 'mdbg-ssa-navigator',
+  selector: 'viewer-ssa-navigator',
   imports: [
     CommonModule,
     MatButtonModule,
     MatIconModule,
     ReactiveFormsModule,
   ],
-  templateUrl: './mdbg_ssa_navigator.ng.html',
-  styleUrls: ['./mdbg_ssa_navigator.scss'],
+  templateUrl: './viewer_ssa_navigator.ng.html',
+  styleUrls: ['./viewer_ssa_navigator.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MdbgSsaNavigatorComponent implements OnInit, OnChanges {
+export class ViewerSsaNavigatorComponent implements OnInit, OnChanges {
   @Input({required: true}) modelGraph!: ModelGraph;
   @Input({required: true}) paneId!: string;
 

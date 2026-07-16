@@ -20,9 +20,9 @@ import {ModelGraph, NodeType, OpNode} from './common/model_graph';
 import {
   buildMlirExport,
   resolveMlirExportNodes,
-} from './mdbg_mlir_exporter';
+} from './viewer_mlir_exporter';
 
-describe('mdbg MLIR exporter', () => {
+describe('Viewer MLIR exporter', () => {
   it('sorts selected nodes by viewer.graph_order without repairing skipped defs', () => {
     const graph = createGraph([
       createOp(
