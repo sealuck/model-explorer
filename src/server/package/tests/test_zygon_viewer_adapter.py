@@ -12,7 +12,9 @@ import pytest
 from model_explorer.zygon_viewer_adapter import (
     ZygonViewerAdapter,
     get_cached_graph_json_path,
+    materialize_run_manifest,
 )
+from model_explorer.config import ModelExplorerConfig
 from model_explorer.zygon_viewer_tools import find_viewer_tool
 
 _GRAPH = {
@@ -129,6 +131,70 @@ def test_should_find_overlay_tool_in_python_environment(monkeypatch, tmp_path):
     find_viewer_tool.cache_clear()
 
     assert find_viewer_tool("zygon-viewer-overlay") == str(tool)
+
+
+def _write_materialized_run(run_dir: Path) -> Path:
+    cache = run_dir / "overlay"
+    cache.mkdir()
+    (cache / "graph.json").write_text(json.dumps(_GRAPH))
+    (cache / "anomaly.json").write_text("{}")
+    (cache / "metadata.json").write_text(
+        json.dumps({
+            "schema": "zygon-viewer/overlay-cache/v1",
+            "graph": {"path": "graph.json"},
+            "layers": {
+                "anomaly": {"present": True},
+                "timing": {"present": False},
+                "memory": {"present": False},
+                "crash": {"present": False},
+            },
+        })
+    )
+    manifest = run_dir / "run_manifest.json"
+    manifest.write_text(json.dumps({"schema": "zygon/run-manifest/v1"}))
+    return manifest
+
+
+def test_should_materialize_run_manifest_into_persistent_overlay(monkeypatch, tmp_path):
+    manifest = _write_materialized_run(tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        "model_explorer.zygon_viewer_adapter.find_viewer_tool",
+        lambda name: f"/tools/{name}",
+    )
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("model_explorer.zygon_viewer_adapter.subprocess.run", run)
+
+    materialized = materialize_run_manifest(str(manifest))
+
+    assert calls[0][0] == ["/tools/zygon-viewer-overlay", str(manifest)]
+    assert materialized.graph_path == str(tmp_path / "overlay" / "graph.json")
+    assert materialized.node_data_paths == [str(tmp_path / "overlay" / "anomaly.json")]
+
+
+def test_should_expand_run_manifest_in_model_explorer_config(monkeypatch, tmp_path):
+    manifest = _write_materialized_run(tmp_path)
+    monkeypatch.setattr(
+        "model_explorer.zygon_viewer_adapter.find_viewer_tool",
+        lambda name: f"/tools/{name}",
+    )
+    monkeypatch.setattr(
+        "model_explorer.zygon_viewer_adapter.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+
+    config = ModelExplorerConfig().add_model_from_path(str(manifest))
+
+    assert config.model_sources == [{
+        "url": str(tmp_path / "overlay" / "graph.json"),
+        "adapterId": "zygon_viewer",
+    }]
+    assert config.node_data_sources == [str(tmp_path / "overlay" / "anomaly.json")]
+    assert config.node_data_target_models == ["model"]
 
 
 def test_should_import_model_explorer_without_viewer_distribution():

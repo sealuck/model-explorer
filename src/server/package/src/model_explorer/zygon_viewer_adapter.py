@@ -1,5 +1,6 @@
 """Model Explorer adapter for Zygon Viewer MLIR, FX, and Graph artifacts."""
 
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
@@ -22,10 +23,84 @@ from .zygon_viewer_tools import find_viewer_tool
 # exact Graph produced during conversion instead of projecting the Model again.
 _graph_cache: dict[str, str] = {}
 
+_RUN_MANIFEST_SCHEMA = "zygon/run-manifest/v1"
+_OVERLAY_CACHE_SCHEMA = "zygon-viewer/overlay-cache/v1"
+_LAYER_FILES = ("anomaly.json", "timing.json", "memory.json", "crash.json")
+
+
+@dataclass(frozen=True)
+class MaterializedRunManifest:
+    """Persistent Viewer files selected for one Run Manifest."""
+
+    graph_path: str
+    node_data_paths: list[str]
+    model_label: str
+
 
 def get_cached_graph_json_path(model_path: str) -> str | None:
     """Return the cached Graph path for a converted Model artifact."""
     return _graph_cache.get(model_path)
+
+
+def is_run_manifest(model_path: str) -> bool:
+    """Return whether a JSON file declares the current Run Manifest schema."""
+    if Path(model_path).suffix.lower() != ".json":
+        return False
+    try:
+        document = json.loads(Path(model_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(document, dict) and document.get("schema") == _RUN_MANIFEST_SCHEMA
+
+
+def materialize_run_manifest(model_path: str) -> MaterializedRunManifest:
+    """Refresh and resolve the persistent Overlay cache for a Run Manifest."""
+    manifest_path = Path(model_path).resolve()
+    tool = find_viewer_tool("zygon-viewer-overlay")
+    process = subprocess.run(
+        [tool, str(manifest_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        detail = f": {process.stderr.strip()}" if process.stderr.strip() else ""
+        raise RuntimeError(f"zygon-viewer-overlay failed{detail}")
+
+    cache_dir = manifest_path.parent / "overlay"
+    metadata_path = cache_dir / "metadata.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"zygon-viewer-overlay produced invalid metadata: {metadata_path}"
+        ) from error
+    if metadata.get("schema") != _OVERLAY_CACHE_SCHEMA:
+        raise RuntimeError("zygon-viewer-overlay produced unsupported cache metadata")
+
+    graph_metadata = metadata.get("graph", {})
+    if graph_metadata.get("path") != "graph.json":
+        raise RuntimeError("Overlay cache metadata must select graph.json")
+    graph_path = cache_dir / "graph.json"
+    if not graph_path.is_file():
+        raise RuntimeError("Overlay cache is missing graph.json")
+
+    layers = metadata.get("layers", {})
+    node_data_paths = [
+        str(cache_dir / file_name)
+        for file_name in _LAYER_FILES
+        if layers.get(file_name.removesuffix(".json"), {}).get("present") is True
+        and (cache_dir / file_name).is_file()
+    ]
+    try:
+        graph_document = json.loads(graph_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("Overlay cache contains invalid graph.json") from error
+    model_label = str(graph_document.get("label", ""))
+
+    _graph_cache[str(manifest_path)] = str(graph_path)
+    _graph_cache[model_path] = str(graph_path)
+    return MaterializedRunManifest(str(graph_path), node_data_paths, model_label)
 
 
 def _to_kv_list(data: list[dict]) -> list[KeyValue]:
@@ -78,6 +153,8 @@ def _dict_to_graph_collection(data: dict) -> GraphCollection:
 
 
 def _write_cached_graph(model_path: str, document: dict) -> None:
+    if model_path in _graph_cache:
+        return
     if model_path.endswith(".json"):
         _graph_cache[model_path] = model_path
         return
@@ -134,7 +211,9 @@ class ZygonViewerAdapter(Adapter):
     metadata = AdapterMetadata(
         id="zygon_viewer",
         name="Zygon Viewer adapter",
-        description="Loads MLIR, torch.fx code, and Zygon Viewer Graph JSON",
+        description=(
+            "Loads MLIR, torch.fx, Run Manifest, and Zygon Viewer Graph artifacts"
+        ),
         fileExts=["mlir", "fx", "json"],
     )
 
@@ -149,8 +228,11 @@ class ZygonViewerAdapter(Adapter):
         elif suffix == ".json":
             from zygon_viewer.graph_json import GraphJsonError, load_document
 
+            graph_path = model_path
+            if is_run_manifest(model_path):
+                graph_path = materialize_run_manifest(model_path).graph_path
             try:
-                document = load_document(model_path)
+                document = load_document(graph_path)
             except GraphJsonError as error:
                 raise RuntimeError(
                     f"invalid Zygon Viewer Graph JSON: {error}"
