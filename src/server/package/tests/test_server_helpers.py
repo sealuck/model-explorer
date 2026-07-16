@@ -90,7 +90,9 @@ def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path
   accuracy_path = str(tmp_path / 'accuracy.json')
   extra_path = str(tmp_path / 'extra.json')
 
-  monkeypatch.setattr(server, '_find_mdbg', lambda: '/bin/mdbg')
+  monkeypatch.setattr(
+      server, 'find_viewer_tool', lambda name: f'/bin/{name}'
+  )
 
   def fake_run(args, capture_output, text, timeout):
     return SimpleNamespace(
@@ -105,6 +107,7 @@ def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path
       '/focus',
       query_string={
           'graph_path': '/tmp/graph.json',
+          'graph_id': 'main',
           'seed': '%seed',
           'mode': 'single',
           'node_data_paths': f'{accuracy_path}:{extra_path}',
@@ -118,6 +121,7 @@ def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path
 
   graph_path = Path(data['models'][0]['url'])
   assert graph_path.name == 'subgraph.json'
+  assert data['models'][0]['adapterId'] == 'zygon_viewer'
   assert json.loads(graph_path.read_text()) == subgraph
   assert not (graph_path.parent / 'seed_roles.json').exists()
 

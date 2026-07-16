@@ -28,23 +28,23 @@ import {setAnchorHref} from 'safevalues/dom';
 
 import {ModelGraph} from './common/model_graph';
 import {getOutputNodeSsas} from './viewer_graph_attrs';
-import {buildMlirExport} from './mdbg_mlir_exporter';
-import {MdbgSsaChipBoxComponent} from './mdbg_ssa_chip_box';
+import {buildMlirExport} from './viewer_mlir_exporter';
+import {ViewerSsaChipBoxComponent} from './viewer_ssa_chip_box';
 
 /** Toolbar panel for copying/downloading selected nodes as raw MLIR. */
 @Component({
   standalone: true,
-  selector: 'mdbg-export-mlir-panel',
-  imports: [CommonModule, MatButtonModule, MdbgSsaChipBoxComponent],
-  templateUrl: './mdbg_export_mlir_panel.ng.html',
-  styleUrls: ['./mdbg_export_mlir_panel.scss'],
+  selector: 'viewer-export-mlir-panel',
+  imports: [CommonModule, MatButtonModule, ViewerSsaChipBoxComponent],
+  templateUrl: './viewer_export_mlir_panel.ng.html',
+  styleUrls: ['./viewer_export_mlir_panel.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class MdbgExportMlirPanelComponent {
+export class ViewerExportMlirPanelComponent {
   @Input({required: true}) modelGraph!: ModelGraph;
   @Input({required: true}) paneId!: string;
-  @ViewChild(MdbgSsaChipBoxComponent)
-  opChipBox?: MdbgSsaChipBoxComponent;
+  @ViewChild(ViewerSsaChipBoxComponent)
+  opChipBox?: ViewerSsaChipBoxComponent;
 
   appendToken(token: string, label?: string): void {
     this.opChipBox?.appendToken(token, label);
@@ -95,8 +95,8 @@ export class MdbgExportMlirPanelComponent {
 
   private get exportFileName(): string {
     const modelPath = this.modelGraph?.modelPath ?? '';
-    const modelName = modelPath.split(/[\\/]/).pop() || 'mdbg_export';
-    const baseName = modelName.replace(/\.[^.]+$/, '') || 'mdbg_export';
+    const modelName = modelPath.split(/[\\/]/).pop() || 'viewer_export';
+    const baseName = modelName.replace(/\.[^.]+$/, '') || 'viewer_export';
     return `${baseName}.mlir`;
   }
 }

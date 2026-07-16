@@ -33,8 +33,7 @@ class ExtensionManager(object, metaclass=Singleton):
   # Adapters that always load; no C++ wrapper needed.
   _ALWAYS_MODULES: list[str] = [
       '.builtin_pytorch_exportedprogram_adapter',
-      '.mdbg_mlir_adapter',
-      '.mdbg_fx_adapter',
+      '.zygon_viewer_adapter',
   ]
   # Adapters that require the ai_edge_model_explorer_adapter C++ wrapper.
   BUILTIN_ADAPTER_MODULES: list[str] = _ALWAYS_MODULES + [
@@ -48,10 +47,8 @@ class ExtensionManager(object, metaclass=Singleton):
   _BUILTIN_EXTENSION_ALIASES: set[str] = {
       'builtin_pytorch_exportedprogram',
       'builtin_pytorch_exportedprogram_adapter',
-      'mdbg_mlir',
-      'mdbg_mlir_adapter',
-      'mdbg_fx',
-      'mdbg_fx_adapter',
+      'zygon_viewer',
+      'zygon_viewer_adapter',
       'builtin_tflite_flatbuffer',
       'builtin_tflite_flatbuffer_adapter',
       'builtin_tflite_mlir',

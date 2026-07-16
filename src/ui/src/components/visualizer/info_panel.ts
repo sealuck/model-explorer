@@ -79,7 +79,7 @@ import {
   OPERATION_TEXT_ATTR_KEY,
 } from './viewer_graph_attrs';
 import {genIoTreeData, IoTree, TreeNode} from './io_tree';
-import {MdbgSsaNavigatorComponent} from './mdbg_ssa_navigator';
+import {ViewerSsaNavigatorComponent} from './viewer_ssa_navigator';
 import {NodeDataProviderExtensionService} from './node_data_provider_extension_service';
 import {NodeDataProviderSummaryPanel} from './node_data_provider_summary_panel';
 import {Paginator} from './paginator';
@@ -177,7 +177,7 @@ const DEDICATED_SECTION_ATTR_KEYS = new Set([
     MatTooltipModule,
     Paginator,
     IoTree,
-    MdbgSsaNavigatorComponent,
+    ViewerSsaNavigatorComponent,
     NodeDataProviderSummaryPanel,
   ],
   providers: [InfoPanelService],

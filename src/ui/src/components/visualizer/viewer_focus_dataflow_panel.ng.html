@@ -20,7 +20,7 @@ limitations under the License.
   <div class="header">Focus Dataflow</div>
 
   <form class="content" (submit)="$event.preventDefault()">
-    <mdbg-ssa-chip-box
+    <viewer-ssa-chip-box
         boxLabel="Seeds"
         importButtonText="Import seeds from file"
         clearButtonText="Clear Seeds"
@@ -29,7 +29,7 @@ limitations under the License.
         removeAriaLabel="Remove seed"
         [outputNodeSsas]="outputNodeSsas"
         (fileImported)="handleImportedSeeds()">
-    </mdbg-ssa-chip-box>
+    </viewer-ssa-chip-box>
 
     <label>
       Context

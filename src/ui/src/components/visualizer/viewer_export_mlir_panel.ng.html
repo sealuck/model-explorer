@@ -20,7 +20,7 @@ limitations under the License.
   <div class="header">Export MLIR</div>
 
   <form class="content" (submit)="$event.preventDefault()">
-    <mdbg-ssa-chip-box
+    <viewer-ssa-chip-box
         boxLabel="Ops"
         importButtonText="Import ops from file"
         inputAriaLabel="Add op"
@@ -28,7 +28,7 @@ limitations under the License.
         removeAriaLabel="Remove op"
         [showClearButton]="false"
         [outputNodeSsas]="outputNodeSsas">
-    </mdbg-ssa-chip-box>
+    </viewer-ssa-chip-box>
 
     <div class="actions">
       <button

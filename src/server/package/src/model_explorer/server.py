@@ -18,7 +18,6 @@ import logging
 import os
 import platform
 import queue
-import shutil
 import socket
 import subprocess
 import sys
@@ -50,11 +49,9 @@ from .extension_manager import ExtensionManager
 from .file_change_handler import FileChangeHandler
 from .server_directive_dispatcher import ServerDirectiveDispatcher
 from .server_director import ServerDirector
-from .mdbg_fx_adapter import (
-    get_cached_graph_json_path as get_cached_fx_graph_json_path,
-)
-from .mdbg_mlir_adapter import get_cached_graph_json_path
 from .utils import convert_adapter_response
+from .zygon_viewer_adapter import get_cached_graph_json_path
+from .zygon_viewer_tools import find_viewer_tool
 
 server_directive_dispatcher = ServerDirectiveDispatcher()
 
@@ -125,14 +122,10 @@ def _parse_node_data_paths(node_data_paths: str) -> list[str]:
   return paths
 
 
-def _resolve_mdbg_graph_path(graph_path: str) -> str:
-  # Resolve a .mlir/.fx source to the cached graph JSON from the earlier convert.
-  if graph_path.endswith('.mlir'):
+def _resolve_viewer_graph_path(graph_path: str) -> str:
+  # Reuse the exact Graph projected when ME opened the source artifact.
+  if graph_path.endswith(('.mlir', '.fx')):
     cached = get_cached_graph_json_path(graph_path)
-    if cached:
-      return cached
-  elif graph_path.endswith('.fx'):
-    cached = get_cached_fx_graph_json_path(graph_path)
     if cached:
       return cached
   return graph_path
@@ -155,23 +148,6 @@ def _make_json_response(obj):
   resp = make_response(body)
   resp.headers['Content-Type'] = 'application/json'
   return resp
-
-
-def _find_mdbg() -> str | None:
-  """Find the mdbg binary; None if not available."""
-  path = os.environ.get('MDBG_BIN')
-  if path and os.path.isfile(path):
-    return path
-  path = shutil.which('mdbg')
-  if path:
-    return path
-  # Infer project root: server.py is 7 levels inside third_party/model-explorer.
-  _here = os.path.dirname(os.path.abspath(__file__))
-  _root = os.path.normpath(os.path.join(_here, *(['..'] * 7)))
-  candidate = os.path.join(_root, 'build', 'bin', 'mdbg')
-  if os.path.isfile(candidate):
-    return candidate
-  return None
 
 
 def _get_latest_version_from_repo(package_json_url: str) -> str:
@@ -466,6 +442,7 @@ def start(
   def dataflow():
     """Extract dataflow subgraph centered on a node."""
     graph_path = request.args.get('graph_path', '')
+    graph_id = request.args.get('graph_id', '')
     node_id = request.args.get('node_id', '')
     node_ssa = request.args.get('node_ssa', '')
     context = request.args.get('context', 'none')
@@ -481,15 +458,16 @@ def start(
       resp.status_code = 400
       return resp
 
-    mdbg = _find_mdbg()
-    if not mdbg:
-      return _make_json_response(
-          {'error': 'mdbg binary not found; set MDBG_BIN or build mdbg'}
-      )
+    try:
+      focus_tool = find_viewer_tool('zygon-viewer-focus')
+    except RuntimeError as error:
+      return _make_json_response({'error': str(error)})
 
-    graph_path = _resolve_mdbg_graph_path(graph_path)
+    graph_path = _resolve_viewer_graph_path(graph_path)
 
-    args = [mdbg, 'dataflow', '--graph', graph_path, '-o', '-']
+    args = [focus_tool, '--graph', graph_path, '-o', '-']
+    if graph_id:
+      args += ['--graph-id', graph_id]
     if node_ssa:
       args += ['--node', node_ssa]
     elif node_id:
@@ -512,21 +490,22 @@ def start(
 
   def _run_multi_dataflow(
       graph_path: str,
+      graph_id: str,
       node_ssas: str,
       mode: str,
       context: str,
       context_depth: str,
   ):
-    mdbg = _find_mdbg()
-    if not mdbg:
-      return None, 'mdbg binary not found; set MDBG_BIN or build mdbg'
+    try:
+      focus_tool = find_viewer_tool('zygon-viewer-focus')
+    except RuntimeError as error:
+      return None, str(error)
     if not node_ssas:
       return None, 'source SSAs are required'
 
-    graph_path = _resolve_mdbg_graph_path(graph_path)
+    graph_path = _resolve_viewer_graph_path(graph_path)
     args = [
-        mdbg,
-        'dataflow',
+        focus_tool,
         '--graph',
         graph_path,
         '--nodes',
@@ -540,6 +519,8 @@ def start(
         '-o',
         '-',
     ]
+    if graph_id:
+      args += ['--graph-id', graph_id]
 
     try:
       result = subprocess.run(args, capture_output=True, text=True, timeout=30)
@@ -555,6 +536,7 @@ def start(
   def multi_dataflow():
     """Extract dataflow subgraph centered on multiple nodes."""
     graph_path = request.args.get('graph_path', '')
+    graph_id = request.args.get('graph_id', '')
     node_ssas = request.args.get('node_ssas', '')
     mode = request.args.get('mode', 'union')
     context = request.args.get('context', 'none')
@@ -578,7 +560,7 @@ def start(
       return resp
 
     result, error = _run_multi_dataflow(
-        graph_path, node_ssas, mode, context, context_depth
+        graph_path, graph_id, node_ssas, mode, context, context_depth
     )
     if error:
       return _make_json_response({'error': error})
@@ -586,19 +568,20 @@ def start(
 
   def _run_focus_dataflow(
       graph_path: str,
+      graph_id: str,
       seeds: list[str],
       mode: str,
       context: str,
       context_depth: str,
   ):
-    mdbg = _find_mdbg()
-    if not mdbg:
-      return None, 'mdbg binary not found; set MDBG_BIN or build mdbg'
+    try:
+      focus_tool = find_viewer_tool('zygon-viewer-focus')
+    except RuntimeError as error:
+      return None, str(error)
 
-    graph_path = _resolve_mdbg_graph_path(graph_path)
+    graph_path = _resolve_viewer_graph_path(graph_path)
     args = [
-        mdbg,
-        'dataflow',
+        focus_tool,
         '--graph',
         graph_path,
         '--mode',
@@ -610,6 +593,8 @@ def start(
         '-o',
         '-',
     ]
+    if graph_id:
+      args += ['--graph-id', graph_id]
     for seed in seeds:
       args += ['--seed', seed]
 
@@ -627,6 +612,7 @@ def start(
   def focus():
     """Extract focused dataflow subgraph and open in new tab."""
     graph_path = request.args.get('graph_path', '')
+    graph_id = request.args.get('graph_id', '')
     seeds = [seed.strip() for seed in request.args.getlist('seed')]
     seeds = [seed for seed in seeds if seed]
     mode = request.args.get('mode', '')
@@ -641,7 +627,7 @@ def start(
       return f'<h3>Error: {validation_error}</h3>', 400
 
     result, error = _run_focus_dataflow(
-        graph_path, seeds, mode, context, context_depth
+        graph_path, graph_id, seeds, mode, context, context_depth
     )
     if error:
       return f'<h3>Error: {error}</h3>'
@@ -649,7 +635,7 @@ def start(
     from urllib.parse import quote
 
     # Write focused graph to a temp dir so Model Explorer can load it by path.
-    tmp_dir = tempfile.mkdtemp(prefix='mdbg_focus_')
+    tmp_dir = tempfile.mkdtemp(prefix='zygon_viewer_focus_')
     graph_tmp_path = os.path.join(tmp_dir, 'subgraph.json')
     with open(graph_tmp_path, 'w') as f:
       f.write(result.stdout)
@@ -658,7 +644,7 @@ def start(
     if node_data_paths:
       paths += _parse_node_data_paths(node_data_paths)
 
-    data = {'models': [{'url': graph_tmp_path, 'adapterId': 'mdbg_mlir'}]}
+    data = {'models': [{'url': graph_tmp_path, 'adapterId': 'zygon_viewer'}]}
     if paths:
       data['nodeData'] = paths
     return redirect(f'/?data={quote(json.dumps(data))}')

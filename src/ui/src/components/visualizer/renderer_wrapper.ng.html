@@ -234,18 +234,18 @@ limitations under the License.
     </div>
 
     @if (showFocusDataflowPanel) {
-      <mdbg-focus-dataflow-panel
+      <viewer-focus-dataflow-panel
           [class.pushed-down]="showSubgraphBreadcrumbs"
           [modelGraph]="modelGraph"
           [paneId]="paneId">
-      </mdbg-focus-dataflow-panel>
+      </viewer-focus-dataflow-panel>
     }
     @if (showExportMlirPanel) {
-      <mdbg-export-mlir-panel
+      <viewer-export-mlir-panel
           [class.pushed-down]="showSubgraphBreadcrumbs"
           [modelGraph]="modelGraph"
           [paneId]="paneId">
-      </mdbg-export-mlir-panel>
+      </viewer-export-mlir-panel>
     }
   }
 
