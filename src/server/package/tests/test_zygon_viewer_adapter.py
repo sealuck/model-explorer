@@ -1,5 +1,6 @@
 """Tests for the unified Zygon Viewer Model Explorer adapter."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 from model_explorer.zygon_viewer_adapter import (
     ZygonViewerAdapter,
+    find_compiler_overlay,
     get_cached_graph_json_path,
     materialize_run_manifest,
 )
@@ -140,7 +142,7 @@ def _write_materialized_run(run_dir: Path) -> Path:
     (cache / "anomaly.json").write_text("{}")
     (cache / "metadata.json").write_text(
         json.dumps({
-            "schema": "zygon-viewer/overlay-cache/v1",
+            "schema": "zygon-viewer/overlay-cache/v2",
             "graph": {"path": "graph.json"},
             "layers": {
                 "anomaly": {"present": True},
@@ -195,6 +197,68 @@ def test_should_expand_run_manifest_in_model_explorer_config(monkeypatch, tmp_pa
     }]
     assert config.node_data_sources == [str(tmp_path / "overlay" / "anomaly.json")]
     assert config.node_data_target_models == ["model"]
+
+
+def _write_compiler_overlay(tmp_path: Path) -> Path:
+    model = tmp_path / "model.mlir"
+    model.write_text("module {}\n")
+    cache = tmp_path / "model.overlay"
+    cache.mkdir()
+    (cache / "graph.json").write_text(json.dumps(_GRAPH))
+    (cache / "timing.json").write_text("{}")
+    (cache / "metadata.json").write_text(
+        json.dumps({
+            "schema": "zygon-viewer/overlay-cache/v2",
+            "source": {
+                "kind": "compiler_telemetry",
+                "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+                "input_sha256": "telemetry",
+            },
+            "graph": {"path": "graph.json"},
+            "layers": {
+                "anomaly": {"present": False},
+                "timing": {"present": True},
+                "memory": {"present": False},
+                "crash": {"present": False},
+            },
+        })
+    )
+    return model
+
+
+def test_should_discover_compiler_overlay_beside_mlir(tmp_path):
+    model = _write_compiler_overlay(tmp_path)
+
+    materialized = find_compiler_overlay(str(model))
+
+    assert materialized is not None
+    assert materialized.graph_path == str(tmp_path / "model.overlay" / "graph.json")
+    assert materialized.node_data_paths == [
+        str(tmp_path / "model.overlay" / "timing.json")
+    ]
+
+
+def test_should_expand_compiler_overlay_in_model_explorer_config(tmp_path):
+    model = _write_compiler_overlay(tmp_path)
+
+    config = ModelExplorerConfig().add_model_from_path(str(model))
+
+    assert config.model_sources == [{
+        "url": str(tmp_path / "model.overlay" / "graph.json"),
+        "adapterId": "zygon_viewer",
+    }]
+    assert config.node_data_sources == [
+        str(tmp_path / "model.overlay" / "timing.json")
+    ]
+    assert config.node_data_target_models == ["model"]
+
+
+def test_should_reject_stale_compiler_overlay(tmp_path):
+    model = _write_compiler_overlay(tmp_path)
+    model.write_text("module { /* changed */ }\n")
+
+    with pytest.raises(RuntimeError, match="Overlay is stale"):
+        find_compiler_overlay(str(model))
 
 
 def test_should_import_model_explorer_without_viewer_distribution():

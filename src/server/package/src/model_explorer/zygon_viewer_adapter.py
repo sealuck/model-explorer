@@ -1,6 +1,7 @@
 """Model Explorer adapter for Zygon Viewer MLIR, FX, and Graph artifacts."""
 
 from dataclasses import dataclass
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -24,7 +25,7 @@ from .zygon_viewer_tools import find_viewer_tool
 _graph_cache: dict[str, str] = {}
 
 _RUN_MANIFEST_SCHEMA = "zygon/run-manifest/v1"
-_OVERLAY_CACHE_SCHEMA = "zygon-viewer/overlay-cache/v1"
+_OVERLAY_CACHE_SCHEMA = "zygon-viewer/overlay-cache/v2"
 _LAYER_FILES = ("anomaly.json", "timing.json", "memory.json", "crash.json")
 
 
@@ -67,7 +68,14 @@ def materialize_run_manifest(model_path: str) -> MaterializedRunManifest:
         detail = f": {process.stderr.strip()}" if process.stderr.strip() else ""
         raise RuntimeError(f"zygon-viewer-overlay failed{detail}")
 
-    cache_dir = manifest_path.parent / "overlay"
+    materialized = _read_overlay_cache(manifest_path.parent / "overlay")
+    _graph_cache[str(manifest_path)] = materialized.graph_path
+    _graph_cache[model_path] = materialized.graph_path
+    return materialized
+
+
+def _read_overlay_cache(cache_dir: Path) -> MaterializedRunManifest:
+    """Validate one persistent Overlay cache and return its public files."""
     metadata_path = cache_dir / "metadata.json"
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -98,9 +106,32 @@ def materialize_run_manifest(model_path: str) -> MaterializedRunManifest:
         raise RuntimeError("Overlay cache contains invalid graph.json") from error
     model_label = str(graph_document.get("label", ""))
 
-    _graph_cache[str(manifest_path)] = str(graph_path)
-    _graph_cache[model_path] = str(graph_path)
     return MaterializedRunManifest(str(graph_path), node_data_paths, model_label)
+
+
+def find_compiler_overlay(model_path: str) -> MaterializedRunManifest | None:
+    """Resolve a fresh sibling `<model-stem>.overlay` cache for one MLIR file."""
+    model = Path(model_path).resolve()
+    if model.suffix.lower() != ".mlir":
+        return None
+    cache_dir = model.parent / f"{model.stem}.overlay"
+    metadata_path = cache_dir / "metadata.json"
+    if not metadata_path.is_file():
+        return None
+    materialized = _read_overlay_cache(cache_dir)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    source = metadata.get("source", {})
+    if source.get("kind") != "compiler_telemetry":
+        return None
+    actual_digest = hashlib.sha256(model.read_bytes()).hexdigest()
+    if source.get("model_sha256") != actual_digest:
+        raise RuntimeError(
+            "the compiler telemetry Overlay is stale; rerun "
+            "zygon-viewer-overlay for this MLIR artifact"
+        )
+    _graph_cache[str(model)] = materialized.graph_path
+    _graph_cache[model_path] = materialized.graph_path
+    return materialized
 
 
 def _to_kv_list(data: list[dict]) -> list[KeyValue]:
@@ -222,7 +253,18 @@ class ZygonViewerAdapter(Adapter):
 
         suffix = Path(model_path).suffix.lower()
         if suffix == ".mlir":
-            document = _convert_mlir(model_path)
+            compiler_overlay = find_compiler_overlay(model_path)
+            if compiler_overlay:
+                from zygon_viewer.graph_json import GraphJsonError, load_document
+
+                try:
+                    document = load_document(compiler_overlay.graph_path)
+                except GraphJsonError as error:
+                    raise RuntimeError(
+                        f"invalid Zygon Viewer Graph JSON: {error}"
+                    ) from error
+            else:
+                document = _convert_mlir(model_path)
         elif suffix == ".fx":
             document = _convert_fx(model_path)
         elif suffix == ".json":
