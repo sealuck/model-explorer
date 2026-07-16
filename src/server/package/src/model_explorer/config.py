@@ -76,6 +76,25 @@ class ModelExplorerConfig:
     # Get the absolute path (after expanding home dir path "~").
     abs_model_path = os.path.abspath(os.path.expanduser(path))
 
+    # A Run Manifest is an entry point rather than a Graph. Materialize its
+    # persistent Viewer cache once, then expose the cached Graph and present
+    # node-data layers through Model Explorer's ordinary URL configuration.
+    if adapterId in ('', 'zygon_viewer'):
+      from .zygon_viewer_adapter import (
+          is_run_manifest,
+          materialize_run_manifest,
+      )
+
+      if is_run_manifest(abs_model_path):
+        materialized = materialize_run_manifest(abs_model_path)
+        abs_model_path = materialized.graph_path
+        adapterId = 'zygon_viewer'
+        for node_data_path in materialized.node_data_paths:
+          self.add_node_data_from_path(
+              node_data_path,
+              model_name=materialized.model_label or None,
+          )
+
     # Construct model source and add it.
     model_source: ModelSource = {'url': abs_model_path}
     if adapterId != '':
