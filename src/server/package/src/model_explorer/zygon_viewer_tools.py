@@ -9,6 +9,7 @@ import sysconfig
 _ENV_BY_TOOL = {
     "zygon-viewer-focus": "ZYGON_VIEWER_FOCUS",
     "zygon-viewer-mlir": "ZYGON_VIEWER_MLIR",
+    "zygon-viewer-overlay": "ZYGON_VIEWER_OVERLAY",
 }
 _SOURCE_ROOT = Path(__file__).resolve().parents[7]
 

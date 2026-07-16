@@ -114,6 +114,23 @@ def test_should_find_viewer_tool_in_python_environment(monkeypatch, tmp_path):
     assert find_viewer_tool("zygon-viewer-focus") == str(tool)
 
 
+def test_should_find_overlay_tool_in_python_environment(monkeypatch, tmp_path):
+    scripts_dir = tmp_path / "python-bin"
+    scripts_dir.mkdir()
+    tool = scripts_dir / "zygon-viewer-overlay"
+    tool.touch()
+
+    monkeypatch.delenv("ZYGON_VIEWER_OVERLAY", raising=False)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(
+        "model_explorer.zygon_viewer_tools.sysconfig.get_path",
+        lambda name: str(scripts_dir) if name == "scripts" else "",
+    )
+    find_viewer_tool.cache_clear()
+
+    assert find_viewer_tool("zygon-viewer-overlay") == str(tool)
+
+
 def test_should_import_model_explorer_without_viewer_distribution():
     package_root = Path(__file__).resolve().parents[1] / "src"
     script = """
