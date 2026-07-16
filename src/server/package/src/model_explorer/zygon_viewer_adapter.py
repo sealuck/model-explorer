@@ -20,11 +20,11 @@ from .graph_builder import (
 from .types import ModelExplorerGraphs
 from .zygon_viewer_tools import find_viewer_tool
 
-# Source artifact path -> schema-v1 Graph JSON path. Focus routes consume the
+# Source artifact path -> schema-v2 Graph JSON path. Focus routes consume the
 # exact Graph produced during conversion instead of projecting the Model again.
 _graph_cache: dict[str, str] = {}
 
-_RUN_MANIFEST_SCHEMA = "zygon/run-manifest/v1"
+_RUN_MANIFEST_SCHEMA = "zygon/run-manifest/v2"
 _OVERLAY_CACHE_SCHEMA = "zygon-viewer/overlay-cache/v2"
 _LAYER_FILES = ("anomaly.json", "timing.json", "memory.json", "crash.json")
 

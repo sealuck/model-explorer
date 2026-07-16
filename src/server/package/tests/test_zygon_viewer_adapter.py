@@ -14,13 +14,14 @@ from model_explorer.zygon_viewer_adapter import (
     ZygonViewerAdapter,
     find_compiler_overlay,
     get_cached_graph_json_path,
+    is_run_manifest,
     materialize_run_manifest,
 )
 from model_explorer.config import ModelExplorerConfig
 from model_explorer.zygon_viewer_tools import find_viewer_tool
 
 _GRAPH = {
-    "schemaVersion": "zygon-viewer/graph/v1",
+    "schemaVersion": "zygon-viewer/graph/v2",
     "label": "model",
     "graphs": [
         {
@@ -43,7 +44,7 @@ def forward(self, arg0):
 """
 
 
-def test_should_load_schema_v1_graph_json(tmp_path):
+def test_should_load_schema_v2_graph_json(tmp_path):
     model = tmp_path / "model.json"
     model.write_text(json.dumps(_GRAPH))
 
@@ -61,6 +62,25 @@ def test_should_reject_graph_json_without_schema_version(tmp_path):
 
     with pytest.raises(RuntimeError, match="schemaVersion is required"):
         ZygonViewerAdapter().convert(str(model), {})
+
+
+def test_should_reject_v1_graph_json(tmp_path):
+    model = tmp_path / "model.json"
+    document = dict(_GRAPH)
+    document["schemaVersion"] = "zygon-viewer/graph/v1"
+    model.write_text(json.dumps(document))
+
+    with pytest.raises(RuntimeError, match="unsupported Graph JSON schemaVersion"):
+        ZygonViewerAdapter().convert(str(model), {})
+
+
+def test_should_recognize_only_v2_run_manifest(tmp_path):
+    manifest = tmp_path / "run_manifest.json"
+    manifest.write_text(json.dumps({"schema": "zygon/run-manifest/v1"}))
+    assert not is_run_manifest(str(manifest))
+
+    manifest.write_text(json.dumps({"schema": "zygon/run-manifest/v2"}))
+    assert is_run_manifest(str(manifest))
 
 
 def test_should_project_fx_without_spawning_process(monkeypatch, tmp_path):
@@ -153,7 +173,7 @@ def _write_materialized_run(run_dir: Path) -> Path:
         })
     )
     manifest = run_dir / "run_manifest.json"
-    manifest.write_text(json.dumps({"schema": "zygon/run-manifest/v1"}))
+    manifest.write_text(json.dumps({"schema": "zygon/run-manifest/v2"}))
     return manifest
 
 
