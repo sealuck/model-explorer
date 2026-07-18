@@ -21,7 +21,7 @@ from model_explorer.config import ModelExplorerConfig
 from model_explorer.zygon_viewer_tools import find_viewer_tool
 
 _GRAPH = {
-    "schemaVersion": "zygon-viewer/graph/v2",
+    "schemaVersion": "zygon-viewer/graph/v3",
     "label": "model",
     "graphs": [
         {
@@ -44,7 +44,7 @@ def forward(self, arg0):
 """
 
 
-def test_should_load_schema_v2_graph_json(tmp_path):
+def test_should_load_schema_v3_graph_json(tmp_path):
     model = tmp_path / "model.json"
     model.write_text(json.dumps(_GRAPH))
 
@@ -72,6 +72,97 @@ def test_should_reject_v1_graph_json(tmp_path):
 
     with pytest.raises(RuntimeError, match="unsupported Graph JSON schemaVersion"):
         ZygonViewerAdapter().convert(str(model), {})
+
+
+def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
+    document = {
+        "schemaVersion": "zygon-viewer/graph/v3",
+        "label": "bufferized",
+        "graphs": [
+            {
+                "id": "main",
+                "nodes": [
+                    {"id": "alloc", "label": "memref.alloc"},
+                    {
+                        "id": "store",
+                        "label": "memref.store",
+                        "incomingEdges": [
+                            {
+                                "id": "buffer-0",
+                                "relationKind": "buffer_flow",
+                                "sourceNodeId": "alloc",
+                                "sourceNodeOutputId": "0",
+                                "targetNodeInputId": "1",
+                                "metadata": {
+                                    "buffer": {
+                                        "storageId": "storage:alloc:0",
+                                        "color": "#4477AA",
+                                        "access": {
+                                            "read": False,
+                                            "discard": False,
+                                            "write": True,
+                                            "free": False,
+                                        },
+                                    }
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "id": "load",
+                        "label": "memref.load",
+                        "incomingEdges": [
+                            {
+                                "id": "ssa-0",
+                                "relationKind": "data_flow",
+                                "sourceNodeId": "store",
+                                "sourceNodeOutputId": "0",
+                                "targetNodeInputId": "0",
+                            },
+                            {
+                                "id": "buffer-1",
+                                "relationKind": "buffer_flow",
+                                "sourceNodeId": "store",
+                                "sourceNodeOutputId": "buffer:1",
+                                "targetNodeInputId": "0",
+                                "metadata": {
+                                    "buffer": {
+                                        "storageId": "storage:alloc:0",
+                                        "color": "#4477AA",
+                                        "access": {
+                                            "read": True,
+                                            "discard": False,
+                                            "write": False,
+                                            "free": False,
+                                        },
+                                    }
+                                },
+                            },
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+    model = tmp_path / "bufferized.json"
+    model.write_text(json.dumps(document))
+
+    result = ZygonViewerAdapter().convert(str(model), {})
+
+    graph = result["graphCollections"][0].graphs[0]
+    load = next(node for node in graph.nodes if node.id == "load")
+    assert [edge.id for edge in load.incomingEdges] == ["ssa-0"]
+    tasks = graph.tasksData.edgeOverlaysDataListLeftPane
+    assert len(tasks) == 1
+    assert tasks[0].name == "Logical Storage"
+    assert tasks[0].selectByDefault is False
+    assert tasks[0].graphName == "main"
+    assert len(tasks[0].overlays) == 1
+    overlay = tasks[0].overlays[0]
+    assert overlay.name == "storage:alloc:0"
+    assert overlay.edgeColor == "#4477AA"
+    assert overlay.dimNonOverlayNodes is True
+    assert [edge.label for edge in overlay.edges] == ["W", "R"]
 
 
 def test_should_recognize_only_v2_run_manifest(tmp_path):

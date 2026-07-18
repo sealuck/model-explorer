@@ -21,19 +21,31 @@
   flex-direction: column;
   height: 100%;
 
-  .index-number {
+  .view-prefix {
     width: 16px;
     height: 16px;
-    border-radius: 8px;
-    box-sizing: border-box;
-    border: 1px solid var(--me-outline-color);
-    background-color: var(--me-surface-container-high-color);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-  }
+    opacity: 0.3;
 
+    &.selected {
+      opacity: 1;
+
+      mat-icon {
+        color: var(--me-warning-text-color);
+      }
+    }
+
+    mat-icon {
+      width: 16px;
+      height: 16px;
+      font-size: 16px;
+      line-height: 16px;
+      color: var(--me-on-surface-variant-color);
+    }
+  }
   .node-filter {
     margin-bottom: 4px;
     position: relative;
@@ -103,10 +115,6 @@
       &:hover {
         opacity: 1;
       }
-    }
-
-    &.visibility {
-      margin-left: 4px;
     }
 
     mat-icon {

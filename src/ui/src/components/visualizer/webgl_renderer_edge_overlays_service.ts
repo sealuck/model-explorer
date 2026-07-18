@@ -147,7 +147,8 @@ export class WebglRendererEdgeOverlaysService {
         // Edge.
         edges.push({
           edge: {
-            id: `overlay_edge_${i}_${sourceNodeId}_${targetNodeId}`,
+            id:
+              edge.id ?? `overlay_edge_${i}_${sourceNodeId}_${targetNodeId}`,
             fromNodeId: sourceNodeId,
             toNodeId: targetNodeId,
             label: label ?? '',

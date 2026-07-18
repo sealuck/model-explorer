@@ -18,13 +18,13 @@ limitations under the License.
 
 <div class="container">
   <div class="index-container">
-    <div class="index-row" *ngFor="let runItem of runItems; let i = index; trackBy: trackByRunId"
+    <div class="index-row" *ngFor="let runItem of runItems; trackBy: trackByRunId"
         [class.selected]="isRunItemSelected(runItem)"
         (click)="handleClickToggleVisibility(runItem, $event)">
       <div class="index-number-container">
-        <div class="index-number" *ngIf="runItem.done"
-            [style.font-size.px]="fontSize - 2">
-          {{i + 1}}
+        <div class="view-prefix" *ngIf="runItem.done"
+            [class.selected]="isRunItemSelected(runItem)">
+          <mat-icon>{{getIconName(runItem)}}</mat-icon>
         </div>
         <mat-spinner color="primary" diameter="16" *ngIf="!runItem.done">
         </mat-spinner>
@@ -35,14 +35,6 @@ limitations under the License.
             [matTooltip]="runItem.error"
             [matTooltipDisabled]="!runItem.error">
           <mat-icon>error</mat-icon>
-        </div>
-        <div class="icon-container visibility"
-            *ngIf="!runItem.error"
-            [class.selected]="isRunItemSelected(runItem)"
-            [class.hide]="!runItem.done"
-            [matTooltip]="getVisibleToggleTooltip(runItem)"
-            (click)="handleClickToggleVisibility(runItem, $event)">
-          <mat-icon>{{getIconName(runItem)}}</mat-icon>
         </div>
         <div class="icon-container action"
             *ngIf="runItem.done"
@@ -71,14 +63,10 @@ limitations under the License.
             <th class="stats">
               Stat
             </th>
-            <th *ngFor="let runItem of runItems; let i = index"
+            <th *ngFor="let runItem of runItems"
                 class="value-col"
                 [class.hidden]="runItem.hideInAggregatedStatsTable">
               <div class="header-content" [style.font-size.px]="fontSize - 1">
-                <div class="index-number"
-                    [style.font-size.px]="fontSize - 2">
-                  {{i + 1}}
-                </div>
                 <div class="stat-label">{{runItem.runName}}</div>
               </div>
             </th>
@@ -132,10 +120,6 @@ limitations under the License.
                 [class.hidden]="runItem.hideInAggregatedStatsTable"
                 (click)="handleClickCategoryStatsHeader(i)">
               <div class="header-content" [style.font-size.px]="fontSize - 1">
-                <div class="index-number"
-                    [style.font-size.px]="fontSize - 2">
-                  {{i + 1}}
-                </div>
                 <div class="stat-label">{{runItem.runName}}</div>
                 <mat-icon *ngIf="curCategoryStatSortingColIndex === i" class="sort">
                   {{curCategoryStatSortingDirection === 'asc' ? 'arrow_upward' : 'arrow_downward'}}
@@ -212,10 +196,6 @@ limitations under the License.
                   [class.hidden]="col.hideInChildrenStatsTable"
                   (click)="handleClickNodeStatsHeader(i)">
                 <div class="header-content" [style.font-size.px]="fontSize - 1">
-                  <div class="index-number"
-                      [style.font-size.px]="fontSize - 2">
-                    {{col.runIndex + 1}}
-                  </div>
                   <div class="stat-label" [class.multi-line]="col.multiLineHeader">{{col.label}}</div>
                   <mat-icon *ngIf="i === curNodeStatSortingColIndex" class="sort">
                     {{curNodeStatSortingDirection === 'asc' ? 'arrow_upward' : 'arrow_downward'}}
@@ -228,10 +208,6 @@ limitations under the License.
                   [class.hidden]="runItem.hideInAggregatedStatsTable"
                   (click)="handleClickNodeStatsHeader(i)">
                 <div class="header-content" [style.font-size.px]="fontSize - 1">
-                  <div class="index-number"
-                      [style.font-size.px]="fontSize - 2">
-                    {{i + 1}}
-                  </div>
                   <div class="stat-label">{{runItem.runName}}</div>
                   <mat-icon *ngIf="i === curNodeStatSortingColIndex" class="sort">
                     {{curNodeStatSortingDirection === 'asc' ? 'arrow_upward' : 'arrow_downward'}}

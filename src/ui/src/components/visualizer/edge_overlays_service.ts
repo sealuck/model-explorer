@@ -109,6 +109,10 @@ export class EdgeOverlaysService {
   addEdgeOverlayData(data: EdgeOverlaysData) {
     this.addOverlay(data);
 
+    if (data.selectByDefault === false) {
+      return;
+    }
+
     // Select all newly-added overlays.
     this.selectedOverlayIds.update((selectedOverlayIds) => {
       const allLoadedOverlaysDataList = this.allLoadedEdgeOverlays();

@@ -164,6 +164,12 @@ class IncomingEdge:
   # (optional)
   targetNodeInputId: str = '0'
 
+  # Stable identity supplied by Graph formats that support parallel relations.
+  id: str = ''
+
+  # Semantic relation kind, e.g. ordinary data_flow.
+  relationKind: str = 'data_flow'
+
 
 # A "node ids" node attribute value.
 #
@@ -290,6 +296,13 @@ class Edge:
   # The id of the target node. Op node only.
   targetNodeId: str
 
+  # Stable relation identity.
+  id: str = ''
+
+  # Exact source and target ports for port-level relations.
+  sourceNodeOutputId: str = '0'
+  targetNodeInputId: str = '0'
+
   # Label shown on the edge.
   label: Union[str, None] = None
 
@@ -322,6 +335,9 @@ class EdgeOverlay:
   # overlay will be hidden.
   showEdgesConnectedToSelectedNodeOnly: Union[bool, None] = None
 
+  # Dim rendered nodes outside this overlay while it is active.
+  dimNonOverlayNodes: bool = False
+
 
 @dataclass
 class EdgeOverlaysData:
@@ -334,6 +350,12 @@ class EdgeOverlaysData:
 
   # A list of edge overlays.
   overlays: list[EdgeOverlay] = field(default_factory=list)
+
+  # Whether the overlays should be enabled as soon as they are loaded.
+  selectByDefault: bool = True
+
+  # Graph id this overlay set belongs to. None applies to every Graph.
+  graphName: Union[str, None] = None
 
 
 @dataclass

@@ -10,17 +10,21 @@ from typing import Dict
 
 from .adapter import Adapter, AdapterMetadata
 from .graph_builder import (
+    Edge,
+    EdgeOverlay,
+    EdgeOverlaysData,
     Graph,
     GraphCollection,
     GraphNode,
     IncomingEdge,
     KeyValue,
     MetadataItem,
+    TasksData,
 )
 from .types import ModelExplorerGraphs
 from .zygon_viewer_tools import find_viewer_tool
 
-# Source artifact path -> schema-v2 Graph JSON path. Focus routes consume the
+# Source artifact path -> versioned Graph JSON path. Focus routes consume the
 # exact Graph produced during conversion instead of projecting the Model again.
 _graph_cache: dict[str, str] = {}
 
@@ -151,9 +155,68 @@ def _to_edge_list(data: list[dict]) -> list[IncomingEdge]:
             sourceNodeId=item["sourceNodeId"],
             sourceNodeOutputId=item.get("sourceNodeOutputId", "0"),
             targetNodeInputId=item.get("targetNodeInputId", "0"),
+            id=item["id"],
+            relationKind=item["relationKind"],
         )
         for item in data
+        if item.get("relationKind") == "data_flow"
     ]
+
+
+def _buffer_access_label(access: dict) -> str:
+    if access.get("free"):
+        return "F"
+    if access.get("read") and access.get("write"):
+        return "R+W"
+    if access.get("write"):
+        return "W"
+    if access.get("read"):
+        return "R"
+    return ""
+
+
+def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
+    by_storage: dict[str, dict] = {}
+    for node in nodes:
+        for relation in node.get("incomingEdges", []):
+            if relation.get("relationKind") != "buffer_flow":
+                continue
+            buffer = relation["metadata"]["buffer"]
+            storage_id = buffer["storageId"]
+            group = by_storage.setdefault(
+                storage_id,
+                {"color": buffer["color"], "edges": []},
+            )
+            group["edges"].append(
+                Edge(
+                    sourceNodeId=relation["sourceNodeId"],
+                    targetNodeId=node["id"],
+                    id=relation["id"],
+                    sourceNodeOutputId=relation["sourceNodeOutputId"],
+                    targetNodeInputId=relation["targetNodeInputId"],
+                    label=_buffer_access_label(buffer["access"]),
+                )
+            )
+
+    if not by_storage:
+        return None
+    overlays = [
+        EdgeOverlay(
+            name=storage_id,
+            edgeColor=group["color"],
+            edges=group["edges"],
+            showEdgesConnectedToSelectedNodeOnly=False,
+            dimNonOverlayNodes=True,
+        )
+        for storage_id, group in sorted(by_storage.items())
+    ]
+    data = EdgeOverlaysData(
+        name="Logical Storage",
+        overlays=overlays,
+        selectByDefault=False,
+        graphName=graph_id,
+    )
+    return TasksData(edgeOverlaysDataListLeftPane=[data])
 
 
 def _build_node(data: dict) -> GraphNode:
@@ -173,6 +236,7 @@ def _dict_to_graph(data: dict) -> Graph:
         id=data["id"],
         nodes=[_build_node(node) for node in data.get("nodes", [])],
         groupNodeAttributes=data.get("groupNodeAttributes"),
+        tasksData=_buffer_flow_tasks(data.get("nodes", []), data["id"]),
     )
 
 
