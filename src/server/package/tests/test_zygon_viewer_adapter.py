@@ -103,6 +103,34 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
                                             "write": True,
                                             "free": False,
                                         },
+                                        "view": {
+                                            "id": "view:alloc:0",
+                                            "aliasKind": "partial",
+                                            "range": {
+                                                "offset": {
+                                                    "kind": "constant",
+                                                    "value": 16,
+                                                },
+                                                "length": {
+                                                    "kind": "constant",
+                                                    "value": 32,
+                                                },
+                                            },
+                                        },
+                                        "copy": {
+                                            "role": "target",
+                                            "overlapKind": "overlap",
+                                            "overlapRange": {
+                                                "offset": {
+                                                    "kind": "constant",
+                                                    "value": 24,
+                                                },
+                                                "length": {
+                                                    "kind": "constant",
+                                                    "value": 8,
+                                                },
+                                            },
+                                        },
                                     }
                                 },
                             }
@@ -162,7 +190,10 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
     assert overlay.name == "storage:alloc:0"
     assert overlay.edgeColor == "#4477AA"
     assert overlay.dimNonOverlayNodes is True
-    assert [edge.label for edge in overlay.edges] == ["W", "R"]
+    assert [edge.label for edge in overlay.edges] == [
+        "W partial [16, 48) overlap [24, 32)",
+        "R",
+    ]
 
 
 def test_should_recognize_only_v2_run_manifest(tmp_path):
