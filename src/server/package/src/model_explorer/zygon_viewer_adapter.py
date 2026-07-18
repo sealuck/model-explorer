@@ -19,6 +19,7 @@ from .graph_builder import (
     IncomingEdge,
     KeyValue,
     MetadataItem,
+    NodeIdsNodeAttributeValue,
     TasksData,
 )
 from .types import ModelExplorerGraphs
@@ -258,7 +259,174 @@ def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
     return TasksData(edgeOverlaysDataListLeftPane=[data])
 
 
-def _build_node(data: dict) -> GraphNode:
+def _static_use_span_label(
+    storage: dict, accesses_by_id: dict[str, dict]
+) -> str:
+    """Describe visible Access endpoints without implying physical lifetime."""
+    span = storage["staticUseSpan"]
+    if "firstAccessId" not in span:
+        return "no visible Access; not physical lifetime"
+    first = accesses_by_id[span["firstAccessId"]]
+    last = accesses_by_id[span["lastAccessId"]]
+    return (
+        f"{first['nodeId']}:{first['inputId']} -> "
+        f"{last['nodeId']}:{last['inputId']}; logical visibility only, "
+        "not physical lifetime"
+    )
+
+
+def _storage_terminus_label(storage: dict) -> str:
+    """Describe the conservative boundary at which Storage visibility ends."""
+    terminus = storage["staticUseSpan"]["terminus"]
+    label = terminus["kind"]
+    if terminus["kind"] != "unknown":
+        label += f" at {terminus['nodeId']}:{terminus['portId']}"
+    return label
+
+
+def _storage_detail_attrs(
+    storage: dict,
+    views_by_id: dict[str, dict],
+    span_label: str,
+    terminus_label: str,
+) -> list[KeyValue]:
+    """Build the complete Storage summary attached only to its origin Node."""
+    origin = storage["origin"]
+    views = storage["views"]
+    accesses = storage["accesses"]
+
+    view_lines = [
+        f"{view['id']} {view['aliasKind']} {_byte_range_label(view['range'])}"
+        for view in views
+    ]
+    access_lines = []
+    access_node_ids = []
+    seen_access_nodes = set()
+    for access in accesses:
+        view = views_by_id[access["viewId"]]
+        label = _buffer_access_label(access["access"])
+        access_lines.append(
+            f"{label} {access['nodeId']}:{access['inputId']} "
+            f"{_byte_range_label(view['range'])}"
+        )
+        if access["nodeId"] not in seen_access_nodes:
+            seen_access_nodes.add(access["nodeId"])
+            access_node_ids.append(access["nodeId"])
+
+    attrs = [
+        KeyValue(key="Buffer Storage", value=storage["id"]),
+        KeyValue(
+            key="Storage origin",
+            value=(
+                f"{origin['kind']} {origin['nodeId']}:{origin['outputId']}"
+            ),
+        ),
+        KeyValue(key="Storage range", value=_byte_range_label(storage["range"])),
+        KeyValue(
+            key="Storage size",
+            value=_range_value_label(storage["range"]["length"]),
+        ),
+        KeyValue(key="Memory space", value=storage["memorySpace"]),
+        KeyValue(key="Buffer Views", value="\n".join(view_lines) or "none"),
+        KeyValue(key="Buffer Accesses", value="\n".join(access_lines) or "none"),
+        KeyValue(key="Static use span", value=span_label),
+        KeyValue(key="Storage terminus", value=terminus_label),
+    ]
+    if access_node_ids:
+        attrs.append(
+            KeyValue(
+                key="Buffer Access nodes",
+                value=NodeIdsNodeAttributeValue(nodeIds=access_node_ids),
+            )
+        )
+    return attrs
+
+
+def _storage_reference_attrs(
+    storage: dict,
+    views: list[dict],
+    accesses: list[dict],
+    views_by_id: dict[str, dict],
+    span_label: str,
+    terminus_label: str,
+) -> list[KeyValue]:
+    """Build compact local facts plus navigation back to the Storage origin."""
+    origin = storage["origin"]
+    view_lines = [
+        f"{view['id']} {view['aliasKind']} {_byte_range_label(view['range'])}"
+        for view in views
+    ]
+    access_lines = [
+        (
+            f"{_buffer_access_label(access['access'])} "
+            f"{access['nodeId']}:{access['inputId']} "
+            f"{_byte_range_label(views_by_id[access['viewId']]['range'])}"
+        )
+        for access in accesses
+    ]
+
+    attrs = [
+        KeyValue(key="Buffer Storage", value=storage["id"]),
+        KeyValue(
+            key="Storage origin node",
+            value=NodeIdsNodeAttributeValue(nodeIds=[origin["nodeId"]]),
+        ),
+        KeyValue(key="Static use span", value=span_label),
+        KeyValue(key="Storage terminus", value=terminus_label),
+    ]
+    if view_lines:
+        attrs.append(KeyValue(key="Buffer Views", value="\n".join(view_lines)))
+    if access_lines:
+        attrs.append(
+            KeyValue(key="Buffer Accesses", value="\n".join(access_lines))
+        )
+    return attrs
+
+
+def _storage_details_by_node(graph: dict) -> dict[str, list[KeyValue]]:
+    """Index Storage details in linear time for Model Explorer Node selection."""
+    result: dict[str, list[KeyValue]] = {}
+    for storage in graph.get("bufferStorages", []):
+        origin_node_id = storage["origin"]["nodeId"]
+        views_by_id = {view["id"]: view for view in storage["views"]}
+        accesses_by_id = {
+            access["id"]: access for access in storage["accesses"]
+        }
+        span_label = _static_use_span_label(storage, accesses_by_id)
+        terminus_label = _storage_terminus_label(storage)
+        result.setdefault(origin_node_id, []).extend(
+            _storage_detail_attrs(
+                storage, views_by_id, span_label, terminus_label
+            )
+        )
+
+        views_by_node: dict[str, list[dict]] = {}
+        for view in storage["views"]:
+            views_by_node.setdefault(view["nodeId"], []).append(view)
+        accesses_by_node: dict[str, list[dict]] = {}
+        for access in storage["accesses"]:
+            accesses_by_node.setdefault(access["nodeId"], []).append(access)
+        node_ids = set(views_by_node) | set(accesses_by_node)
+        terminus = storage["staticUseSpan"]["terminus"]
+        if terminus["kind"] != "unknown":
+            node_ids.add(terminus["nodeId"])
+        for node_id in node_ids:
+            if node_id == origin_node_id:
+                continue
+            result.setdefault(node_id, []).extend(
+                _storage_reference_attrs(
+                    storage,
+                    views_by_node.get(node_id, []),
+                    accesses_by_node.get(node_id, []),
+                    views_by_id,
+                    span_label,
+                    terminus_label,
+                )
+            )
+    return result
+
+
+def _build_node(data: dict, storage_attrs: list[KeyValue]) -> GraphNode:
     return GraphNode(
         id=data["id"],
         label=data.get("label", ""),
@@ -266,14 +434,18 @@ def _build_node(data: dict) -> GraphNode:
         incomingEdges=_to_edge_list(data.get("incomingEdges", [])),
         inputsMetadata=_to_metadata_list(data.get("inputsMetadata", [])),
         outputsMetadata=_to_metadata_list(data.get("outputsMetadata", [])),
-        attrs=_to_kv_list(data.get("attrs", [])),
+        attrs=_to_kv_list(data.get("attrs", [])) + storage_attrs,
     )
 
 
 def _dict_to_graph(data: dict) -> Graph:
+    storage_details = _storage_details_by_node(data)
     return Graph(
         id=data["id"],
-        nodes=[_build_node(node) for node in data.get("nodes", [])],
+        nodes=[
+            _build_node(node, storage_details.get(node["id"], []))
+            for node in data.get("nodes", [])
+        ],
         groupNodeAttributes=data.get("groupNodeAttributes"),
         tasksData=_buffer_flow_tasks(data.get("nodes", []), data["id"]),
     )

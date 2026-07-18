@@ -12,6 +12,8 @@ import pytest
 
 from model_explorer.zygon_viewer_adapter import (
     ZygonViewerAdapter,
+    _buffer_access_label,
+    _storage_terminus_label,
     find_compiler_overlay,
     get_cached_graph_json_path,
     is_run_manifest,
@@ -42,6 +44,41 @@ def forward(self, arg0):
     result = torch.ops.aten.relu.default(arg0)
     return [result]
 """
+
+
+@pytest.mark.parametrize(
+    ("access", "label"),
+    [
+        ({"read": False, "discard": False, "write": True}, "W"),
+        ({"read": False, "discard": True, "write": True}, "D+W"),
+        ({"read": True, "discard": False, "write": True}, "R+W"),
+    ],
+)
+def test_should_derive_composable_buffer_access_badges(access, label):
+    assert _buffer_access_label(access) == label
+
+
+@pytest.mark.parametrize(
+    ("terminus", "label"),
+    [
+        (
+            {"kind": "free", "nodeId": "dealloc", "portId": "0"},
+            "free at dealloc:0",
+        ),
+        (
+            {"kind": "return", "nodeId": "outputs0", "portId": "0"},
+            "return at outputs0:0",
+        ),
+        (
+            {"kind": "escape", "nodeId": "call", "portId": "1"},
+            "escape at call:1",
+        ),
+        ({"kind": "unknown"}, "unknown"),
+    ],
+)
+def test_should_keep_storage_terminus_states_distinct(terminus, label):
+    storage = {"staticUseSpan": {"terminus": terminus}}
+    assert _storage_terminus_label(storage) == label
 
 
 def test_should_load_schema_v3_graph_json(tmp_path):
@@ -169,6 +206,73 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
                         ],
                     },
                 ],
+                "bufferStorages": [
+                    {
+                        "id": "storage:alloc:0",
+                        "color": "#4477AA",
+                        "origin": {
+                            "kind": "allocation",
+                            "nodeId": "alloc",
+                            "outputId": "0",
+                        },
+                        "range": {
+                            "offset": {"kind": "constant", "value": 0},
+                            "length": {"kind": "constant", "value": 64},
+                        },
+                        "memorySpace": "default",
+                        "views": [
+                            {
+                                "id": "view:alloc:0",
+                                "nodeId": "alloc",
+                                "outputId": "0",
+                                "aliasKind": "partial",
+                                "range": {
+                                    "offset": {
+                                        "kind": "constant",
+                                        "value": 16,
+                                    },
+                                    "length": {
+                                        "kind": "constant",
+                                        "value": 32,
+                                    },
+                                },
+                            }
+                        ],
+                        "accesses": [
+                            {
+                                "id": "buffer-0",
+                                "nodeId": "store",
+                                "inputId": "1",
+                                "outputId": "buffer:1",
+                                "viewId": "view:alloc:0",
+                                "access": {
+                                    "read": False,
+                                    "discard": False,
+                                    "write": True,
+                                    "free": False,
+                                },
+                            },
+                            {
+                                "id": "buffer-1",
+                                "nodeId": "load",
+                                "inputId": "0",
+                                "outputId": "buffer:0",
+                                "viewId": "view:alloc:0",
+                                "access": {
+                                    "read": True,
+                                    "discard": False,
+                                    "write": False,
+                                    "free": False,
+                                },
+                            },
+                        ],
+                        "staticUseSpan": {
+                            "firstAccessId": "buffer-0",
+                            "lastAccessId": "buffer-1",
+                            "terminus": {"kind": "unknown"},
+                        },
+                    }
+                ],
             }
         ],
     }
@@ -194,6 +298,29 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
         "W partial [16, 48) overlap [24, 32)",
         "R",
     ]
+    allocation = next(node for node in graph.nodes if node.id == "alloc")
+    details = {attr.key: attr.value for attr in allocation.attrs}
+    assert details["Buffer Storage"] == "storage:alloc:0"
+    assert details["Storage origin"] == "allocation alloc:0"
+    assert details["Storage range"] == "[0, 64)"
+    assert details["Storage size"] == "64"
+    assert details["Memory space"] == "default"
+    assert details["Buffer Views"] == "view:alloc:0 partial [16, 48)"
+    assert details["Buffer Accesses"] == "W store:1 [16, 48)\nR load:0 [16, 48)"
+    assert details["Static use span"] == (
+        "store:1 -> load:0; logical visibility only, not physical lifetime"
+    )
+    assert details["Storage terminus"] == "unknown"
+    assert details["Buffer Access nodes"].nodeIds == ["store", "load"]
+
+    store = next(node for node in graph.nodes if node.id == "store")
+    store_details = {attr.key: attr.value for attr in store.attrs}
+    assert store_details["Buffer Storage"] == "storage:alloc:0"
+    assert store_details["Storage origin node"].nodeIds == ["alloc"]
+    assert store_details["Buffer Accesses"] == "W store:1 [16, 48)"
+    assert store_details["Static use span"] == details["Static use span"]
+    assert "Storage range" not in store_details
+    assert "Buffer Access nodes" not in store_details
 
 
 def test_should_recognize_only_v2_run_manifest(tmp_path):
