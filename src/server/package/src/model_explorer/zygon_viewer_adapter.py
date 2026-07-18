@@ -168,11 +168,50 @@ def _buffer_access_label(access: dict) -> str:
         return "F"
     if access.get("read") and access.get("write"):
         return "R+W"
+    if access.get("discard") and access.get("write"):
+        return "D+W"
     if access.get("write"):
         return "W"
     if access.get("read"):
         return "R"
     return ""
+
+
+def _range_value_label(value: dict) -> str:
+    kind = value.get("kind")
+    if kind == "constant":
+        return str(value["value"])
+    if kind == "symbolic":
+        return value["expression"]
+    return "unknown"
+
+
+def _byte_range_label(byte_range: dict) -> str:
+    offset = byte_range["offset"]
+    length = byte_range["length"]
+    if offset.get("kind") == "constant" and length.get("kind") == "constant":
+        begin = offset["value"]
+        return f"[{begin}, {begin + length['value']})"
+    return (
+        f"offset={_range_value_label(offset)}, "
+        f"length={_range_value_label(length)}"
+    )
+
+
+def _buffer_edge_label(buffer: dict) -> str:
+    access = _buffer_access_label(buffer["access"])
+    view = buffer.get("view")
+    if not view:
+        return access
+    role = access or "View"
+    label = f"{role} {view['aliasKind']} {_byte_range_label(view['range'])}"
+    copy = buffer.get("copy")
+    if copy and copy["role"] == "target":
+        if copy["overlapKind"] == "overlap":
+            label += f" overlap {_byte_range_label(copy['overlapRange'])}"
+        elif copy["overlapKind"] == "unknown":
+            label += " overlap unknown"
+    return label
 
 
 def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
@@ -194,7 +233,7 @@ def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
                     id=relation["id"],
                     sourceNodeOutputId=relation["sourceNodeOutputId"],
                     targetNodeInputId=relation["targetNodeInputId"],
-                    label=_buffer_access_label(buffer["access"]),
+                    label=_buffer_edge_label(buffer),
                 )
             )
 
