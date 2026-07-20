@@ -291,16 +291,19 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
     assert tasks[0].graphName == "main"
     assert len(tasks[0].overlays) == 1
     overlay = tasks[0].overlays[0]
-    assert overlay.name == "storage:alloc:0"
+    assert overlay.name == "S1 | storage:alloc:0"
+    assert overlay.storageId == "storage:alloc:0"
+    assert overlay.marker == "S1"
     assert overlay.edgeColor == "#4477AA"
     assert overlay.dimNonOverlayNodes is True
     assert [edge.label for edge in overlay.edges] == [
-        "W partial [16, 48) overlap [24, 32)",
-        "R",
+        "[S1] W partial [16, 48) overlap [24, 32) | out:0 -> in:1",
+        "[S1] R | out:buffer:1 -> in:0",
     ]
     allocation = next(node for node in graph.nodes if node.id == "alloc")
     details = {attr.key: attr.value for attr in allocation.attrs}
     assert details["Buffer Storage"] == "storage:alloc:0"
+    assert details["Storage marker"] == "S1"
     assert details["Storage origin"] == "allocation alloc:0"
     assert details["Storage range"] == "[0, 64)"
     assert details["Storage size"] == "64"
@@ -316,6 +319,7 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
     store = next(node for node in graph.nodes if node.id == "store")
     store_details = {attr.key: attr.value for attr in store.attrs}
     assert store_details["Buffer Storage"] == "storage:alloc:0"
+    assert store_details["Storage marker"] == "S1"
     assert store_details["Storage origin node"].nodeIds == ["alloc"]
     assert store_details["Buffer Accesses"] == "W store:1 [16, 48)"
     assert store_details["Static use span"] == details["Static use span"]

@@ -46,6 +46,10 @@ export declare interface EdgeOverlay {
   /** The name displayed in the UI to identify this overlay. */
   name: string;
 
+  /** Logical Storage identity and compact marker for Buffer Flow overlays. */
+  storageId?: string;
+  marker?: string;
+
   /** The edges that define the overlay. */
   edges: Edge[];
 

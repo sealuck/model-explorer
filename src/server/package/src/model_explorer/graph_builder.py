@@ -338,6 +338,10 @@ class EdgeOverlay:
   # Dim rendered nodes outside this overlay while it is active.
   dimNonOverlayNodes: bool = False
 
+  # Optional logical Storage identity and its compact, readable marker.
+  storageId: Union[str, None] = None
+  marker: Union[str, None] = None
+
 
 @dataclass
 class EdgeOverlaysData:

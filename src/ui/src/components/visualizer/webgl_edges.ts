@@ -277,7 +277,9 @@ export class WebglEdges {
       for (let i = 0; i < points.length - 1; i++) {
         const startPt = points[i];
         const endPt = points[i + 1];
-        const segmentId = `${fromNode.id}__${toNode.id}___${i}`;
+        // Stable edge identity is required here: multiple port-level overlay
+        // edges may connect the same Node pair and must animate independently.
+        const segmentId = `${edge.id}___${i}`;
         const curEndpoints = [
           startPt.x + nodeGlobalX,
           startPt.y + nodeGlobalY,

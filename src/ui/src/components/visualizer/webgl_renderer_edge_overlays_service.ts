@@ -38,6 +38,122 @@ interface QueueItem {
   hops: number;
 }
 
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/** One rendered overlay edge segment that can be selected by the user. */
+export interface OverlayEdgeHitTarget {
+  overlayId: string;
+  edge: Edge;
+  start: Point;
+  end: Point;
+}
+
+function edgePairKey(edge: Edge): string {
+  return edge.sourceNodeId.localeCompare(edge.targetNodeId) < 0
+    ? `${edge.sourceNodeId}___${edge.targetNodeId}`
+    : `${edge.targetNodeId}___${edge.sourceNodeId}`;
+}
+
+function comparePortIds(left = '', right = ''): number {
+  const parse = (value: string) => {
+    const match = /^(.*?)(\d+)$/.exec(value);
+    if (!match) {
+      return {category: 2, prefix: value, index: 0, value};
+    }
+    return {
+      category: match[1] === '' ? 0 : 1,
+      prefix: match[1],
+      index: Number(match[2]),
+      value,
+    };
+  };
+  const leftPort = parse(left);
+  const rightPort = parse(right);
+  return (
+    leftPort.category - rightPort.category ||
+    leftPort.prefix.localeCompare(rightPort.prefix) ||
+    leftPort.index - rightPort.index ||
+    leftPort.value.localeCompare(rightPort.value)
+  );
+}
+
+function compareLaneEdges(left: Edge, right: Edge): number {
+  return (
+    comparePortIds(left.targetNodeInputId, right.targetNodeInputId) ||
+    comparePortIds(left.sourceNodeOutputId, right.sourceNodeOutputId) ||
+    left.sourceNodeId.localeCompare(right.sourceNodeId) ||
+    left.targetNodeId.localeCompare(right.targetNodeId) ||
+    (left.id ?? '').localeCompare(right.id ?? '')
+  );
+}
+
+/**
+ * Returns centered lane offsets for every parallel Node-pair relation.
+ * Sorting by exact ports and stable edge id makes the result independent of
+ * overlay iteration order and therefore stable across layout/reload.
+ */
+export function getStableEdgeLaneOffsets(
+  edges: readonly Edge[],
+): Map<Edge, number> {
+  const edgesByPair = new Map<string, Edge[]>();
+  for (const edge of edges) {
+    const key = edgePairKey(edge);
+    const group = edgesByPair.get(key) ?? [];
+    group.push(edge);
+    edgesByPair.set(key, group);
+  }
+
+  const offsets = new Map<Edge, number>();
+  for (const group of edgesByPair.values()) {
+    group.sort(compareLaneEdges);
+    for (let index = 0; index < group.length; index++) {
+      offsets.set(group[index], (index + 1) / (group.length + 1) - 0.5);
+    }
+  }
+  return offsets;
+}
+
+function squaredDistanceToSegment(point: Point, start: Point, end: Point) {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const lengthSquared = deltaX * deltaX + deltaY * deltaY;
+  if (lengthSquared === 0) {
+    return (point.x - start.x) ** 2 + (point.y - start.y) ** 2;
+  }
+  const projection = Math.max(
+    0,
+    Math.min(
+      1,
+      ((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) /
+        lengthSquared,
+    ),
+  );
+  const closestX = start.x + projection * deltaX;
+  const closestY = start.y + projection * deltaY;
+  return (point.x - closestX) ** 2 + (point.y - closestY) ** 2;
+}
+
+/** Returns the nearest visible edge within the caller's scene-space radius. */
+export function findClosestOverlayEdge(
+  targets: readonly OverlayEdgeHitTarget[],
+  point: Point,
+  maxDistance: number,
+): OverlayEdgeHitTarget | undefined {
+  let closest: OverlayEdgeHitTarget | undefined;
+  let closestDistance = maxDistance * maxDistance;
+  for (const target of targets) {
+    const distance = squaredDistanceToSegment(point, target.start, target.end);
+    if (distance < closestDistance) {
+      closest = target;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
 /**
  * Service for managing edge overlays related tasks in webgl renderer.
  */
@@ -50,6 +166,9 @@ export class WebglRendererEdgeOverlaysService {
   private overlaysEdgesList: WebglEdges[] = [];
   private overlaysEdgeTextsList: WebglTexts[] = [];
   private bfsEdgeCache: Map<string, Set<Edge>> = new Map();
+  private renderedOverlayEdges: OverlayEdgeHitTarget[] = [];
+
+  hoveredOverlayEdge: OverlayEdgeHitTarget | undefined;
 
   readonly edgeOverlaysService = inject(EdgeOverlaysService);
   curOverlays: ProcessedEdgeOverlay[] = [];
@@ -88,25 +207,24 @@ export class WebglRendererEdgeOverlaysService {
       return;
     }
 
-    // Keep track of number of edges for a given pair of nodes. If there are
-    // more than 1 edges, we will shift the edges to avoid overlapping.
-    //
-    // From sorted edge key (nodeId1->nodeId2) to the number of edges for that
-    // pair.
-    const seenEdgePairs: Record<string, number> = {};
-    const totalEdgePairs: Record<string, number> = {};
-
-    // Populate totalEdgePairs.
-    for (let i = 0; i < this.curOverlays.length; i++) {
-      const subgraph = this.curOverlays[i];
+    const visibleEdges: Edge[] = [];
+    for (const subgraph of this.curOverlays) {
       for (const edge of subgraph.edges) {
-        const {sourceNodeId, targetNodeId, label} = edge;
         if (!this.shouldShowEdge(subgraph, edge)) {
           continue;
         }
-        this.addToEdgePairs(sourceNodeId, targetNodeId, totalEdgePairs);
+        const sourceNode = this.webglRenderer.curModelGraph.nodesById[
+          edge.sourceNodeId
+        ] as OpNode;
+        const targetNode = this.webglRenderer.curModelGraph.nodesById[
+          edge.targetNodeId
+        ] as OpNode;
+        if (sourceNode && targetNode) {
+          visibleEdges.push(edge);
+        }
       }
     }
+    const laneOffsets = getStableEdgeLaneOffsets(visibleEdges);
 
     for (let i = 0; i < this.curOverlays.length; i++) {
       const subgraph = this.curOverlays[i];
@@ -116,7 +234,12 @@ export class WebglRendererEdgeOverlaysService {
         edgeWidth,
         edgeWidth / DEFAULT_EDGE_WIDTH,
       );
-      for (const edge of subgraph.edges) {
+      for (
+        let edgeOrdinal = 0;
+        edgeOrdinal < subgraph.edges.length;
+        edgeOrdinal++
+      ) {
+        const edge = subgraph.edges[edgeOrdinal];
         const {sourceNodeId, targetNodeId, label} = edge;
         if (!this.shouldShowEdge(subgraph, edge)) {
           continue;
@@ -131,24 +254,26 @@ export class WebglRendererEdgeOverlaysService {
         if (!sourceNode || !targetNode) {
           continue;
         }
-        const curEdgesCount = this.addToEdgePairs(
-          sourceNodeId,
-          targetNodeId,
-          seenEdgePairs,
-        );
-        const totalEdgesCount =
-          totalEdgePairs[this.getEdgeKey(sourceNodeId, targetNodeId)];
-        const xOffsetFactor = (1 / (totalEdgesCount + 1)) * curEdgesCount - 0.5;
+        const xOffsetFactor = laneOffsets.get(edge) ?? 0;
         const {intersection1, intersection2} = getIntersectionPoints(
           this.webglRenderer.getNodeRect(sourceNode),
           this.webglRenderer.getNodeRect(targetNode),
           xOffsetFactor,
         );
+        this.renderedOverlayEdges.push({
+          overlayId: subgraph.id,
+          edge,
+          start: intersection1,
+          end: intersection2,
+        });
         // Edge.
         edges.push({
           edge: {
             id:
-              edge.id ?? `overlay_edge_${i}_${sourceNodeId}_${targetNodeId}`,
+              edge.id ||
+              `overlay_edge_${i}_${edgeOrdinal}_${sourceNodeId}:` +
+                `${edge.sourceNodeOutputId ?? ''}->${targetNodeId}:` +
+                `${edge.targetNodeInputId ?? ''}`,
             fromNodeId: sourceNodeId,
             toNodeId: targetNodeId,
             label: label ?? '',
@@ -206,6 +331,21 @@ export class WebglRendererEdgeOverlaysService {
 
     this.overlaysEdgesList = [];
     this.overlaysEdgeTextsList = [];
+    this.renderedOverlayEdges = [];
+    this.hoveredOverlayEdge = undefined;
+  }
+
+  updateHoveredOverlayEdge(point: Point, maxDistance: number): boolean {
+    this.hoveredOverlayEdge = findClosestOverlayEdge(
+      this.renderedOverlayEdges,
+      point,
+      maxDistance,
+    );
+    return this.hoveredOverlayEdge != null;
+  }
+
+  clearHoveredOverlayEdge() {
+    this.hoveredOverlayEdge = undefined;
   }
 
   getDeepestExpandedGroupNodeIds(): string[] {
@@ -241,25 +381,6 @@ export class WebglRendererEdgeOverlaysService {
       }
     }
     return [...ids];
-  }
-
-  private addToEdgePairs(
-    nodeId1: string,
-    nodeId2: string,
-    pairs: Record<string, number>,
-  ): number {
-    const key = this.getEdgeKey(nodeId1, nodeId2);
-    if (pairs[key] === undefined) {
-      pairs[key] = 0;
-    }
-    pairs[key]++;
-    return pairs[key];
-  }
-
-  private getEdgeKey(nodeId1: string, nodeId2: string): string {
-    return nodeId1.localeCompare(nodeId2) < 0
-      ? `${nodeId1}___${nodeId2}`
-      : `${nodeId2}___${nodeId1}`;
   }
 
   /**

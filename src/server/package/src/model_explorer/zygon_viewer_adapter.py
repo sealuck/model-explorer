@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 from typing import Dict
@@ -199,23 +200,58 @@ def _byte_range_label(byte_range: dict) -> str:
     )
 
 
-def _buffer_edge_label(buffer: dict) -> str:
+def _buffer_edge_label(
+    buffer: dict, marker: str, source_port: str, target_port: str
+) -> str:
     access = _buffer_access_label(buffer["access"])
     view = buffer.get("view")
     if not view:
-        return access
-    role = access or "View"
-    label = f"{role} {view['aliasKind']} {_byte_range_label(view['range'])}"
-    copy = buffer.get("copy")
-    if copy and copy["role"] == "target":
-        if copy["overlapKind"] == "overlap":
-            label += f" overlap {_byte_range_label(copy['overlapRange'])}"
-        elif copy["overlapKind"] == "unknown":
-            label += " overlap unknown"
-    return label
+        label = access
+    else:
+        role = access or "View"
+        label = f"{role} {view['aliasKind']} {_byte_range_label(view['range'])}"
+        copy = buffer.get("copy")
+        if copy and copy["role"] == "target":
+            if copy["overlapKind"] == "overlap":
+                label += f" overlap {_byte_range_label(copy['overlapRange'])}"
+            elif copy["overlapKind"] == "unknown":
+                label += " overlap unknown"
+    return f"[{marker}] {label or 'View'} | out:{source_port} -> in:{target_port}"
 
 
-def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
+def _storage_markers(graph: dict) -> dict[str, str]:
+    storage_ids = {storage["id"] for storage in graph.get("bufferStorages", [])}
+    for node in graph.get("nodes", []):
+        for relation in node.get("incomingEdges", []):
+            if relation.get("relationKind") == "buffer_flow":
+                storage_ids.add(relation["metadata"]["buffer"]["storageId"])
+    return {
+        storage_id: f"S{index + 1}"
+        for index, storage_id in enumerate(sorted(storage_ids))
+    }
+
+
+def _port_sort_key(port_id: str) -> tuple[int, str, int, str]:
+    match = re.fullmatch(r"(.*?)(\d+)", port_id)
+    if not match:
+        return (2, port_id, 0, port_id)
+    prefix, index = match.groups()
+    return (0 if not prefix else 1, prefix, int(index), port_id)
+
+
+def _overlay_edge_sort_key(edge: Edge) -> tuple:
+    return (
+        edge.sourceNodeId,
+        edge.targetNodeId,
+        _port_sort_key(edge.targetNodeInputId or ""),
+        _port_sort_key(edge.sourceNodeOutputId or ""),
+        edge.id or "",
+    )
+
+
+def _buffer_flow_tasks(graph: dict) -> TasksData | None:
+    nodes = graph.get("nodes", [])
+    markers = _storage_markers(graph)
     by_storage: dict[str, dict] = {}
     for node in nodes:
         for relation in node.get("incomingEdges", []):
@@ -234,27 +270,36 @@ def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
                     id=relation["id"],
                     sourceNodeOutputId=relation["sourceNodeOutputId"],
                     targetNodeInputId=relation["targetNodeInputId"],
-                    label=_buffer_edge_label(buffer),
+                    label=_buffer_edge_label(
+                        buffer,
+                        markers[storage_id],
+                        relation["sourceNodeOutputId"],
+                        relation["targetNodeInputId"],
+                    ),
                 )
             )
 
     if not by_storage:
         return None
-    overlays = [
-        EdgeOverlay(
-            name=storage_id,
-            edgeColor=group["color"],
-            edges=group["edges"],
-            showEdgesConnectedToSelectedNodeOnly=False,
-            dimNonOverlayNodes=True,
+    overlays = []
+    for storage_id, group in sorted(by_storage.items()):
+        marker = markers[storage_id]
+        overlays.append(
+            EdgeOverlay(
+                name=f"{marker} | {storage_id}",
+                storageId=storage_id,
+                marker=marker,
+                edgeColor=group["color"],
+                edges=sorted(group["edges"], key=_overlay_edge_sort_key),
+                showEdgesConnectedToSelectedNodeOnly=False,
+                dimNonOverlayNodes=True,
+            )
         )
-        for storage_id, group in sorted(by_storage.items())
-    ]
     data = EdgeOverlaysData(
         name="Logical Storage",
         overlays=overlays,
         selectByDefault=False,
-        graphName=graph_id,
+        graphName=graph["id"],
     )
     return TasksData(edgeOverlaysDataListLeftPane=[data])
 
@@ -286,6 +331,7 @@ def _storage_terminus_label(storage: dict) -> str:
 
 def _storage_detail_attrs(
     storage: dict,
+    marker: str,
     views_by_id: dict[str, dict],
     span_label: str,
     terminus_label: str,
@@ -315,6 +361,7 @@ def _storage_detail_attrs(
 
     attrs = [
         KeyValue(key="Buffer Storage", value=storage["id"]),
+        KeyValue(key="Storage marker", value=marker),
         KeyValue(
             key="Storage origin",
             value=(
@@ -344,6 +391,7 @@ def _storage_detail_attrs(
 
 def _storage_reference_attrs(
     storage: dict,
+    marker: str,
     views: list[dict],
     accesses: list[dict],
     views_by_id: dict[str, dict],
@@ -367,6 +415,7 @@ def _storage_reference_attrs(
 
     attrs = [
         KeyValue(key="Buffer Storage", value=storage["id"]),
+        KeyValue(key="Storage marker", value=marker),
         KeyValue(
             key="Storage origin node",
             value=NodeIdsNodeAttributeValue(nodeIds=[origin["nodeId"]]),
@@ -386,6 +435,7 @@ def _storage_reference_attrs(
 def _storage_details_by_node(graph: dict) -> dict[str, list[KeyValue]]:
     """Index Storage details in linear time for Model Explorer Node selection."""
     result: dict[str, list[KeyValue]] = {}
+    markers = _storage_markers(graph)
     for storage in graph.get("bufferStorages", []):
         origin_node_id = storage["origin"]["nodeId"]
         views_by_id = {view["id"]: view for view in storage["views"]}
@@ -396,7 +446,11 @@ def _storage_details_by_node(graph: dict) -> dict[str, list[KeyValue]]:
         terminus_label = _storage_terminus_label(storage)
         result.setdefault(origin_node_id, []).extend(
             _storage_detail_attrs(
-                storage, views_by_id, span_label, terminus_label
+                storage,
+                markers[storage["id"]],
+                views_by_id,
+                span_label,
+                terminus_label,
             )
         )
 
@@ -416,6 +470,7 @@ def _storage_details_by_node(graph: dict) -> dict[str, list[KeyValue]]:
             result.setdefault(node_id, []).extend(
                 _storage_reference_attrs(
                     storage,
+                    markers[storage["id"]],
                     views_by_node.get(node_id, []),
                     accesses_by_node.get(node_id, []),
                     views_by_id,
@@ -447,7 +502,7 @@ def _dict_to_graph(data: dict) -> Graph:
             for node in data.get("nodes", [])
         ],
         groupNodeAttributes=data.get("groupNodeAttributes"),
-        tasksData=_buffer_flow_tasks(data.get("nodes", []), data["id"]),
+        tasksData=_buffer_flow_tasks(data),
     )
 
 

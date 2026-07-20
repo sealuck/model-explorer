@@ -1322,6 +1322,8 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       return;
     }
     this.setHoveredNodeId('');
+    this.webglRendererEdgeOverlaysService.clearHoveredOverlayEdge();
+    document.body.style.cursor = 'default';
     this.updateNodesStyles();
     this.handleHoveredGroupNodeIconChanged();
     this.webglRendererThreejsService.render();
@@ -1551,6 +1553,16 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
           this.handleSelectNode(this.hoveredNodeId);
         }
       }
+    }
+    // Overlay edges are selectable only when no node is under the pointer.
+    // Selecting their target keeps the chosen Storage overlay visible because
+    // edge overlays are rendered relative to the currently selected node.
+    else if (this.webglRendererEdgeOverlaysService.hoveredOverlayEdge) {
+      const hit = this.webglRendererEdgeOverlaysService.hoveredOverlayEdge;
+      this.webglRendererEdgeOverlaysService.edgeOverlaysService.selectOnlyOverlay(
+        hit.overlayId,
+      );
+      this.handleSelectNode(hit.edge.targetNodeId);
     }
     // Click on empty space.
     else {
@@ -3000,6 +3012,35 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
         this.handleHoveredSubgraphIndicatorChanged(rectangle);
       },
     );
+
+    // Overlay edges are plain line meshes, so Three.js rectangle raycasting
+    // cannot identify an individual parallel lane. Hit-test their stored
+    // scene-space segments with a six-pixel screen-space tolerance instead.
+    const scenePoint =
+      this.webglRendererThreejsService.convertScreenPosToScene(
+        event.offsetX,
+        event.offsetY,
+      );
+    const sceneTolerancePoint =
+      this.webglRendererThreejsService.convertScreenPosToScene(
+        event.offsetX + 6,
+        event.offsetY,
+      );
+    const sceneTolerance = Math.hypot(
+      sceneTolerancePoint.x - scenePoint.x,
+      sceneTolerancePoint.y - scenePoint.y,
+    );
+    const edgeHovered =
+      !this.hoveredNodeId &&
+      this.webglRendererEdgeOverlaysService.updateHoveredOverlayEdge(
+        scenePoint,
+        sceneTolerance,
+      );
+    if (this.hoveredNodeId) {
+      this.webglRendererEdgeOverlaysService.clearHoveredOverlayEdge();
+    }
+    document.body.style.cursor =
+      edgeHovered || this.hoveredNodeId ? 'pointer' : 'default';
   }
 
   private handleHoveredIoPickerChanged(rectangle: RoundedRectangleData) {

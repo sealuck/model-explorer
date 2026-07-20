@@ -106,6 +106,11 @@ export class EdgeOverlaysService {
     });
   }
 
+  /** Focuses one overlay after the user selects one of its rendered edges. */
+  selectOnlyOverlay(overlayId: string) {
+    this.selectedOverlayIds.set([overlayId]);
+  }
+
   addEdgeOverlayData(data: EdgeOverlaysData) {
     this.addOverlay(data);
 
