@@ -294,7 +294,6 @@ export class GraphProcessor {
         ) {
           sourceNode.outgoingEdges.push({
             id: incomingEdge.id,
-            relationKind: incomingEdge.relationKind,
             targetNodeId: node.id,
             sourceNodeOutputId: incomingEdge.sourceNodeOutputId,
             targetNodeInputId: incomingEdge.targetNodeInputId,
