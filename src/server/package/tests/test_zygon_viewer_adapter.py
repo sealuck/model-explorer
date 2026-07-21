@@ -3,27 +3,26 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
+from model_explorer.config import ModelExplorerConfig
 from model_explorer.zygon_viewer_adapter import (
     ZygonViewerAdapter,
-    _buffer_access_label,
-    _storage_terminus_label,
+    _memory_access_label,
+    _memory_region_label,
     find_compiler_overlay,
     get_cached_graph_json_path,
     is_run_manifest,
     materialize_run_manifest,
 )
-from model_explorer.config import ModelExplorerConfig
 from model_explorer.zygon_viewer_tools import find_viewer_tool
 
 _GRAPH = {
-    "schemaVersion": "zygon-viewer/graph/v3",
+    "schemaVersion": "zygon-viewer/graph/v4",
     "label": "model",
     "graphs": [
         {
@@ -49,39 +48,32 @@ def forward(self, arg0):
 @pytest.mark.parametrize(
     ("access", "label"),
     [
-        ({"read": False, "discard": False, "write": True}, "W"),
-        ({"read": False, "discard": True, "write": True}, "D+W"),
-        ({"read": True, "discard": False, "write": True}, "R+W"),
+        ({"writeRegion": {}}, "W"),
+        ({"readRegion": {}}, "R"),
+        ({"readRegion": {}, "writeRegion": {}}, "R+W"),
+        ({}, ""),
     ],
 )
-def test_should_derive_composable_buffer_access_badges(access, label):
-    assert _buffer_access_label(access) == label
+def test_should_derive_memory_access_badges_from_region_presence(access, label):
+    assert _memory_access_label(access) == label
 
 
-@pytest.mark.parametrize(
-    ("terminus", "label"),
-    [
-        (
-            {"kind": "free", "nodeId": "dealloc", "portId": "0"},
-            "free at dealloc:0",
-        ),
-        (
-            {"kind": "return", "nodeId": "outputs0", "portId": "0"},
-            "return at outputs0:0",
-        ),
-        (
-            {"kind": "escape", "nodeId": "call", "portId": "1"},
-            "escape at call:1",
-        ),
-        ({"kind": "unknown"}, "unknown"),
-    ],
-)
-def test_should_keep_storage_terminus_states_distinct(terminus, label):
-    storage = {"staticUseSpan": {"terminus": terminus}}
-    assert _storage_terminus_label(storage) == label
+def test_should_label_strided_memory_region_in_bytes():
+    region = {
+        "kind": "strided",
+        "offsetBytes": {"kind": "constant", "value": 16},
+        "sizes": [2, 4],
+        "stridesBytes": [32, 8],
+        "elementBytes": 4,
+    }
+
+    assert _memory_region_label(region) == (
+        "strided(offset=16 bytes, sizes=[2, 4], strides=[32, 8] bytes, element=4"
+        " bytes)"
+    )
 
 
-def test_should_load_schema_v3_graph_json(tmp_path):
+def test_should_load_schema_v4_graph_json(tmp_path):
     model = tmp_path / "model.json"
     model.write_text(json.dumps(_GRAPH))
 
@@ -111,58 +103,65 @@ def test_should_reject_v1_graph_json(tmp_path):
         ZygonViewerAdapter().convert(str(model), {})
 
 
-def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
+def test_should_expose_memory_metadata_as_opt_in_storage_overlay(tmp_path):
     document = {
-        "schemaVersion": "zygon-viewer/graph/v3",
+        "schemaVersion": "zygon-viewer/graph/v4",
         "label": "bufferized",
         "graphs": [
             {
                 "id": "main",
                 "nodes": [
-                    {"id": "alloc", "label": "memref.alloc"},
+                    {
+                        "id": "alloc",
+                        "label": "memref.alloc",
+                        "outputsMetadata": [{"id": "0", "attrs": []}],
+                    },
                     {
                         "id": "store",
                         "label": "memref.store",
                         "incomingEdges": [
                             {
-                                "id": "buffer-0",
-                                "relationKind": "buffer_flow",
+                                "id": "edge-0",
                                 "sourceNodeId": "alloc",
                                 "sourceNodeOutputId": "0",
                                 "targetNodeInputId": "1",
                                 "metadata": {
-                                    "buffer": {
+                                    "memory": {
                                         "storageId": "storage:alloc:0",
-                                        "color": "#4477AA",
-                                        "access": {
-                                            "read": False,
-                                            "discard": False,
-                                            "write": True,
-                                            "free": False,
-                                        },
-                                        "view": {
-                                            "id": "view:alloc:0",
-                                            "aliasKind": "partial",
-                                            "range": {
-                                                "offset": {
-                                                    "kind": "constant",
-                                                    "value": 16,
-                                                },
-                                                "length": {
-                                                    "kind": "constant",
-                                                    "value": 32,
-                                                },
+                                        "viewRegion": {
+                                            "kind": "contiguous",
+                                            "offsetBytes": {
+                                                "kind": "constant",
+                                                "value": 16,
                                             },
+                                            "lengthBytes": {
+                                                "kind": "constant",
+                                                "value": 32,
+                                            },
+                                        },
+                                        "access": {
+                                            "writeRegion": {
+                                                "kind": "contiguous",
+                                                "offsetBytes": {
+                                                    "kind": "constant",
+                                                    "value": 20,
+                                                },
+                                                "lengthBytes": {
+                                                    "kind": "constant",
+                                                    "value": 4,
+                                                },
+                                            }
                                         },
                                         "copy": {
                                             "role": "target",
                                             "overlapKind": "overlap",
-                                            "overlapRange": {
-                                                "offset": {
+                                            "overlapRegion": {
+                                                "kind": "contiguous",
+                                                "offsetBytes": {
                                                     "kind": "constant",
                                                     "value": 24,
                                                 },
-                                                "length": {
+                                                "lengthBytes": {
                                                     "kind": "constant",
                                                     "value": 8,
                                                 },
@@ -178,27 +177,36 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
                         "label": "memref.load",
                         "incomingEdges": [
                             {
-                                "id": "ssa-0",
-                                "relationKind": "data_flow",
-                                "sourceNodeId": "store",
+                                "id": "edge-1",
+                                "sourceNodeId": "alloc",
                                 "sourceNodeOutputId": "0",
                                 "targetNodeInputId": "0",
-                            },
-                            {
-                                "id": "buffer-1",
-                                "relationKind": "buffer_flow",
-                                "sourceNodeId": "store",
-                                "sourceNodeOutputId": "buffer:1",
-                                "targetNodeInputId": "0",
                                 "metadata": {
-                                    "buffer": {
+                                    "memory": {
                                         "storageId": "storage:alloc:0",
-                                        "color": "#4477AA",
+                                        "viewRegion": {
+                                            "kind": "contiguous",
+                                            "offsetBytes": {
+                                                "kind": "constant",
+                                                "value": 16,
+                                            },
+                                            "lengthBytes": {
+                                                "kind": "constant",
+                                                "value": 32,
+                                            },
+                                        },
                                         "access": {
-                                            "read": True,
-                                            "discard": False,
-                                            "write": False,
-                                            "free": False,
+                                            "readRegion": {
+                                                "kind": "contiguous",
+                                                "offsetBytes": {
+                                                    "kind": "constant",
+                                                    "value": 20,
+                                                },
+                                                "lengthBytes": {
+                                                    "kind": "constant",
+                                                    "value": 4,
+                                                },
+                                            }
                                         },
                                     }
                                 },
@@ -206,71 +214,20 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
                         ],
                     },
                 ],
-                "bufferStorages": [
+                "storages": [
                     {
                         "id": "storage:alloc:0",
-                        "color": "#4477AA",
                         "origin": {
                             "kind": "allocation",
                             "nodeId": "alloc",
                             "outputId": "0",
                         },
-                        "range": {
-                            "offset": {"kind": "constant", "value": 0},
-                            "length": {"kind": "constant", "value": 64},
+                        "region": {
+                            "kind": "contiguous",
+                            "offsetBytes": {"kind": "constant", "value": 0},
+                            "lengthBytes": {"kind": "constant", "value": 64},
                         },
                         "memorySpace": "default",
-                        "views": [
-                            {
-                                "id": "view:alloc:0",
-                                "nodeId": "alloc",
-                                "outputId": "0",
-                                "aliasKind": "partial",
-                                "range": {
-                                    "offset": {
-                                        "kind": "constant",
-                                        "value": 16,
-                                    },
-                                    "length": {
-                                        "kind": "constant",
-                                        "value": 32,
-                                    },
-                                },
-                            }
-                        ],
-                        "accesses": [
-                            {
-                                "id": "buffer-0",
-                                "nodeId": "store",
-                                "inputId": "1",
-                                "outputId": "buffer:1",
-                                "viewId": "view:alloc:0",
-                                "access": {
-                                    "read": False,
-                                    "discard": False,
-                                    "write": True,
-                                    "free": False,
-                                },
-                            },
-                            {
-                                "id": "buffer-1",
-                                "nodeId": "load",
-                                "inputId": "0",
-                                "outputId": "buffer:0",
-                                "viewId": "view:alloc:0",
-                                "access": {
-                                    "read": True,
-                                    "discard": False,
-                                    "write": False,
-                                    "free": False,
-                                },
-                            },
-                        ],
-                        "staticUseSpan": {
-                            "firstAccessId": "buffer-0",
-                            "lastAccessId": "buffer-1",
-                            "terminus": {"kind": "unknown"},
-                        },
                     }
                 ],
             }
@@ -283,7 +240,7 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
 
     graph = result["graphCollections"][0].graphs[0]
     load = next(node for node in graph.nodes if node.id == "load")
-    assert [edge.id for edge in load.incomingEdges] == ["ssa-0"]
+    assert [edge.id for edge in load.incomingEdges] == ["edge-1"]
     tasks = graph.tasksData.edgeOverlaysDataListLeftPane
     assert len(tasks) == 1
     assert tasks[0].name == "Logical Storage"
@@ -291,36 +248,30 @@ def test_should_expose_buffer_flow_as_opt_in_logical_storage_overlay(tmp_path):
     assert tasks[0].graphName == "main"
     assert len(tasks[0].overlays) == 1
     overlay = tasks[0].overlays[0]
-    assert overlay.name == "storage:alloc:0"
+    assert overlay.name == "S1"
     assert overlay.edgeColor == "#4477AA"
     assert overlay.dimNonOverlayNodes is True
     assert [edge.label for edge in overlay.edges] == [
-        "W partial [16, 48) overlap [24, 32)",
-        "R",
+        "W [20, 24) bytes; copy target overlap=[24, 32) bytes",
+        "R [20, 24) bytes",
     ]
     allocation = next(node for node in graph.nodes if node.id == "alloc")
     details = {attr.key: attr.value for attr in allocation.attrs}
-    assert details["Buffer Storage"] == "storage:alloc:0"
-    assert details["Storage origin"] == "allocation alloc:0"
-    assert details["Storage range"] == "[0, 64)"
-    assert details["Storage size"] == "64"
-    assert details["Memory space"] == "default"
-    assert details["Buffer Views"] == "view:alloc:0 partial [16, 48)"
-    assert details["Buffer Accesses"] == "W store:1 [16, 48)\nR load:0 [16, 48)"
-    assert details["Static use span"] == (
-        "store:1 -> load:0; logical visibility only, not physical lifetime"
-    )
-    assert details["Storage terminus"] == "unknown"
-    assert details["Buffer Access nodes"].nodeIds == ["store", "load"]
+    assert details["S1 Storage"] == "storage:alloc:0"
+    assert details["S1 Origin"] == "allocation alloc:0"
+    assert details["S1 Region"] == "[0, 64) bytes"
+    assert details["S1 Memory space"] == "default"
+    assert details["S1 Use nodes"].nodeIds == ["store", "load"]
 
     store = next(node for node in graph.nodes if node.id == "store")
     store_details = {attr.key: attr.value for attr in store.attrs}
-    assert store_details["Buffer Storage"] == "storage:alloc:0"
-    assert store_details["Storage origin node"].nodeIds == ["alloc"]
-    assert store_details["Buffer Accesses"] == "W store:1 [16, 48)"
-    assert store_details["Static use span"] == details["Static use span"]
-    assert "Storage range" not in store_details
-    assert "Buffer Access nodes" not in store_details
+    assert store_details["S1 Storage"] == "storage:alloc:0"
+    assert store_details["S1 Origin node"].nodeIds == ["alloc"]
+    assert store_details["S1 View"] == "input 1: [16, 48) bytes"
+    assert store_details["S1 Access"] == (
+        "input 1: W [20, 24) bytes; copy target overlap=[24, 32) bytes"
+    )
+    assert "S1 Region" not in store_details
 
 
 def test_should_recognize_only_v2_run_manifest(tmp_path):
@@ -410,16 +361,18 @@ def _write_materialized_run(run_dir: Path) -> Path:
     (cache / "graph.json").write_text(json.dumps(_GRAPH))
     (cache / "anomaly.json").write_text("{}")
     (cache / "metadata.json").write_text(
-        json.dumps({
-            "schema": "zygon-viewer/overlay-cache/v2",
-            "graph": {"path": "graph.json"},
-            "layers": {
-                "anomaly": {"present": True},
-                "timing": {"present": False},
-                "memory": {"present": False},
-                "crash": {"present": False},
-            },
-        })
+        json.dumps(
+            {
+                "schema": "zygon-viewer/overlay-cache/v2",
+                "graph": {"path": "graph.json"},
+                "layers": {
+                    "anomaly": {"present": True},
+                    "timing": {"present": False},
+                    "memory": {"present": False},
+                    "crash": {"present": False},
+                },
+            }
+        )
     )
     manifest = run_dir / "run_manifest.json"
     manifest.write_text(json.dumps({"schema": "zygon/run-manifest/v2"}))
@@ -460,10 +413,12 @@ def test_should_expand_run_manifest_in_model_explorer_config(monkeypatch, tmp_pa
 
     config = ModelExplorerConfig().add_model_from_path(str(manifest))
 
-    assert config.model_sources == [{
-        "url": str(tmp_path / "overlay" / "graph.json"),
-        "adapterId": "zygon_viewer",
-    }]
+    assert config.model_sources == [
+        {
+            "url": str(tmp_path / "overlay" / "graph.json"),
+            "adapterId": "zygon_viewer",
+        }
+    ]
     assert config.node_data_sources == [str(tmp_path / "overlay" / "anomaly.json")]
     assert config.node_data_target_models == ["model"]
 
@@ -476,21 +431,23 @@ def _write_compiler_overlay(tmp_path: Path) -> Path:
     (cache / "graph.json").write_text(json.dumps(_GRAPH))
     (cache / "timing.json").write_text("{}")
     (cache / "metadata.json").write_text(
-        json.dumps({
-            "schema": "zygon-viewer/overlay-cache/v2",
-            "source": {
-                "kind": "compiler_telemetry",
-                "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
-                "input_sha256": "telemetry",
-            },
-            "graph": {"path": "graph.json"},
-            "layers": {
-                "anomaly": {"present": False},
-                "timing": {"present": True},
-                "memory": {"present": False},
-                "crash": {"present": False},
-            },
-        })
+        json.dumps(
+            {
+                "schema": "zygon-viewer/overlay-cache/v2",
+                "source": {
+                    "kind": "compiler_telemetry",
+                    "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+                    "input_sha256": "telemetry",
+                },
+                "graph": {"path": "graph.json"},
+                "layers": {
+                    "anomaly": {"present": False},
+                    "timing": {"present": True},
+                    "memory": {"present": False},
+                    "crash": {"present": False},
+                },
+            }
+        )
     )
     return model
 
@@ -512,13 +469,13 @@ def test_should_expand_compiler_overlay_in_model_explorer_config(tmp_path):
 
     config = ModelExplorerConfig().add_model_from_path(str(model))
 
-    assert config.model_sources == [{
-        "url": str(tmp_path / "model.overlay" / "graph.json"),
-        "adapterId": "zygon_viewer",
-    }]
-    assert config.node_data_sources == [
-        str(tmp_path / "model.overlay" / "timing.json")
+    assert config.model_sources == [
+        {
+            "url": str(tmp_path / "model.overlay" / "graph.json"),
+            "adapterId": "zygon_viewer",
+        }
     ]
+    assert config.node_data_sources == [str(tmp_path / "model.overlay" / "timing.json")]
     assert config.node_data_target_models == ["model"]
 
 

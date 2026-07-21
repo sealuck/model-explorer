@@ -167,9 +167,6 @@ class IncomingEdge:
   # Stable identity supplied by Graph formats that support parallel relations.
   id: str = ''
 
-  # Semantic relation kind, e.g. ordinary data_flow.
-  relationKind: str = 'data_flow'
-
 
 # A "node ids" node attribute value.
 #

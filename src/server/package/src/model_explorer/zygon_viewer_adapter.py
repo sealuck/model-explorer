@@ -1,11 +1,11 @@
 """Model Explorer adapter for Zygon Viewer MLIR, FX, and Graph artifacts."""
 
-from dataclasses import dataclass
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict
 
 from .adapter import Adapter, AdapterMetadata
@@ -157,23 +157,29 @@ def _to_edge_list(data: list[dict]) -> list[IncomingEdge]:
             sourceNodeOutputId=item.get("sourceNodeOutputId", "0"),
             targetNodeInputId=item.get("targetNodeInputId", "0"),
             id=item["id"],
-            relationKind=item["relationKind"],
         )
         for item in data
-        if item.get("relationKind") == "data_flow"
     ]
 
 
-def _buffer_access_label(access: dict) -> str:
-    if access.get("free"):
-        return "F"
-    if access.get("read") and access.get("write"):
+_STORAGE_COLORS = (
+    "#4477AA",
+    "#EE6677",
+    "#228833",
+    "#CCBB44",
+    "#66CCEE",
+    "#AA3377",
+    "#BBBBBB",
+)
+
+
+def _memory_access_label(access: dict) -> str:
+    """Return a compact badge from the presence of typed effect regions."""
+    if "readRegion" in access and "writeRegion" in access:
         return "R+W"
-    if access.get("discard") and access.get("write"):
-        return "D+W"
-    if access.get("write"):
+    if "writeRegion" in access:
         return "W"
-    if access.get("read"):
+    if "readRegion" in access:
         return "R"
     return ""
 
@@ -187,241 +193,199 @@ def _range_value_label(value: dict) -> str:
     return "unknown"
 
 
-def _byte_range_label(byte_range: dict) -> str:
-    offset = byte_range["offset"]
-    length = byte_range["length"]
+def _memory_region_label(region: dict) -> str:
+    """Format a byte region without pretending an unknown region is exact."""
+    kind = region["kind"]
+    if kind == "unknown":
+        reason = region.get("reason", "")
+        return f"unknown ({reason})" if reason else "unknown"
+    if kind == "strided":
+        offset = _range_value_label(region["offsetBytes"])
+        sizes = ", ".join(str(value) for value in region["sizes"])
+        strides = ", ".join(str(value) for value in region["stridesBytes"])
+        return (
+            f"strided(offset={offset} bytes, sizes=[{sizes}], "
+            f"strides=[{strides}] bytes, element={region['elementBytes']} bytes)"
+        )
+
+    offset = region["offsetBytes"]
+    length = region["lengthBytes"]
     if offset.get("kind") == "constant" and length.get("kind") == "constant":
         begin = offset["value"]
-        return f"[{begin}, {begin + length['value']})"
+        return f"[{begin}, {begin + length['value']}) bytes"
     return (
         f"offset={_range_value_label(offset)}, "
-        f"length={_range_value_label(length)}"
+        f"length={_range_value_label(length)} bytes"
     )
 
 
-def _buffer_edge_label(buffer: dict) -> str:
-    access = _buffer_access_label(buffer["access"])
-    view = buffer.get("view")
-    if not view:
-        return access
-    role = access or "View"
-    label = f"{role} {view['aliasKind']} {_byte_range_label(view['range'])}"
-    copy = buffer.get("copy")
-    if copy and copy["role"] == "target":
-        if copy["overlapKind"] == "overlap":
-            label += f" overlap {_byte_range_label(copy['overlapRange'])}"
-        elif copy["overlapKind"] == "unknown":
-            label += " overlap unknown"
+def _memory_edge_label(memory: dict) -> str:
+    """Describe the local effect carried by one ordinary SSA edge."""
+    access = memory["access"]
+    read = access.get("readRegion")
+    write = access.get("writeRegion")
+    if read is not None and read == write:
+        label = f"R+W {_memory_region_label(read)}"
+    else:
+        effects = []
+        if read is not None:
+            effects.append(f"R {_memory_region_label(read)}")
+        if write is not None:
+            effects.append(f"W {_memory_region_label(write)}")
+        label = "; ".join(effects)
+    if not label:
+        label = f"View {_memory_region_label(memory['viewRegion'])}"
+
+    copy = memory.get("copy")
+    if copy:
+        overlap = copy["overlapKind"]
+        if overlap == "overlap":
+            overlap = _memory_region_label(copy["overlapRegion"])
+        label += f"; copy {copy['role']} overlap={overlap}"
     return label
 
 
-def _buffer_flow_tasks(nodes: list[dict], graph_id: str) -> TasksData | None:
-    by_storage: dict[str, dict] = {}
-    for node in nodes:
-        for relation in node.get("incomingEdges", []):
-            if relation.get("relationKind") != "buffer_flow":
+def _storage_presentation(graph: dict) -> dict[str, dict]:
+    """Assign short labels and colors locally; neither is Graph semantics."""
+    return {
+        storage["id"]: {
+            "marker": f"S{index + 1}",
+            "color": _STORAGE_COLORS[index % len(_STORAGE_COLORS)],
+            "storage": storage,
+        }
+        for index, storage in enumerate(graph.get("storages", []))
+    }
+
+
+def _memory_tasks(graph: dict, presentation: dict[str, dict]) -> TasksData | None:
+    """Build one optional overlay per Storage from existing SSA edges."""
+    edges_by_storage: dict[str, list[Edge]] = {}
+    for node in graph.get("nodes", []):
+        for edge in node.get("incomingEdges", []):
+            memory = edge.get("metadata", {}).get("memory")
+            if memory is None:
                 continue
-            buffer = relation["metadata"]["buffer"]
-            storage_id = buffer["storageId"]
-            group = by_storage.setdefault(
-                storage_id,
-                {"color": buffer["color"], "edges": []},
-            )
-            group["edges"].append(
+            storage_id = memory["storageId"]
+            edges_by_storage.setdefault(storage_id, []).append(
                 Edge(
-                    sourceNodeId=relation["sourceNodeId"],
+                    sourceNodeId=edge["sourceNodeId"],
                     targetNodeId=node["id"],
-                    id=relation["id"],
-                    sourceNodeOutputId=relation["sourceNodeOutputId"],
-                    targetNodeInputId=relation["targetNodeInputId"],
-                    label=_buffer_edge_label(buffer),
+                    id=edge["id"],
+                    sourceNodeOutputId=edge["sourceNodeOutputId"],
+                    targetNodeInputId=edge["targetNodeInputId"],
+                    label=_memory_edge_label(memory),
                 )
             )
 
-    if not by_storage:
+    if not edges_by_storage:
         return None
-    overlays = [
-        EdgeOverlay(
-            name=storage_id,
-            edgeColor=group["color"],
-            edges=group["edges"],
-            showEdgesConnectedToSelectedNodeOnly=False,
-            dimNonOverlayNodes=True,
+    overlays = []
+    for storage_id, item in presentation.items():
+        edges = edges_by_storage.get(storage_id)
+        if not edges:
+            continue
+        overlays.append(
+            EdgeOverlay(
+                name=item["marker"],
+                edgeColor=item["color"],
+                edges=edges,
+                showEdgesConnectedToSelectedNodeOnly=False,
+                dimNonOverlayNodes=True,
+            )
         )
-        for storage_id, group in sorted(by_storage.items())
-    ]
     data = EdgeOverlaysData(
         name="Logical Storage",
         overlays=overlays,
         selectByDefault=False,
-        graphName=graph_id,
+        graphName=graph["id"],
     )
     return TasksData(edgeOverlaysDataListLeftPane=[data])
 
 
-def _static_use_span_label(
-    storage: dict, accesses_by_id: dict[str, dict]
-) -> str:
-    """Describe visible Access endpoints without implying physical lifetime."""
-    span = storage["staticUseSpan"]
-    if "firstAccessId" not in span:
-        return "no visible Access; not physical lifetime"
-    first = accesses_by_id[span["firstAccessId"]]
-    last = accesses_by_id[span["lastAccessId"]]
-    return (
-        f"{first['nodeId']}:{first['inputId']} -> "
-        f"{last['nodeId']}:{last['inputId']}; logical visibility only, "
-        "not physical lifetime"
-    )
-
-
-def _storage_terminus_label(storage: dict) -> str:
-    """Describe the conservative boundary at which Storage visibility ends."""
-    terminus = storage["staticUseSpan"]["terminus"]
-    label = terminus["kind"]
-    if terminus["kind"] != "unknown":
-        label += f" at {terminus['nodeId']}:{terminus['portId']}"
-    return label
-
-
-def _storage_detail_attrs(
-    storage: dict,
-    views_by_id: dict[str, dict],
-    span_label: str,
-    terminus_label: str,
+def _storage_origin_attrs(
+    storage: dict, marker: str, use_node_ids: list[str]
 ) -> list[KeyValue]:
-    """Build the complete Storage summary attached only to its origin Node."""
+    """Describe the minimal root record on the Storage origin Node."""
     origin = storage["origin"]
-    views = storage["views"]
-    accesses = storage["accesses"]
-
-    view_lines = [
-        f"{view['id']} {view['aliasKind']} {_byte_range_label(view['range'])}"
-        for view in views
-    ]
-    access_lines = []
-    access_node_ids = []
-    seen_access_nodes = set()
-    for access in accesses:
-        view = views_by_id[access["viewId"]]
-        label = _buffer_access_label(access["access"])
-        access_lines.append(
-            f"{label} {access['nodeId']}:{access['inputId']} "
-            f"{_byte_range_label(view['range'])}"
-        )
-        if access["nodeId"] not in seen_access_nodes:
-            seen_access_nodes.add(access["nodeId"])
-            access_node_ids.append(access["nodeId"])
-
     attrs = [
-        KeyValue(key="Buffer Storage", value=storage["id"]),
+        KeyValue(key=f"{marker} Storage", value=storage["id"]),
         KeyValue(
-            key="Storage origin",
-            value=(
-                f"{origin['kind']} {origin['nodeId']}:{origin['outputId']}"
-            ),
+            key=f"{marker} Origin",
+            value=f"{origin['kind']} {origin['nodeId']}:{origin['outputId']}",
         ),
-        KeyValue(key="Storage range", value=_byte_range_label(storage["range"])),
         KeyValue(
-            key="Storage size",
-            value=_range_value_label(storage["range"]["length"]),
+            key=f"{marker} Region",
+            value=_memory_region_label(storage["region"]),
         ),
-        KeyValue(key="Memory space", value=storage["memorySpace"]),
-        KeyValue(key="Buffer Views", value="\n".join(view_lines) or "none"),
-        KeyValue(key="Buffer Accesses", value="\n".join(access_lines) or "none"),
-        KeyValue(key="Static use span", value=span_label),
-        KeyValue(key="Storage terminus", value=terminus_label),
+        KeyValue(key=f"{marker} Memory space", value=storage["memorySpace"]),
     ]
-    if access_node_ids:
+    if use_node_ids:
         attrs.append(
             KeyValue(
-                key="Buffer Access nodes",
-                value=NodeIdsNodeAttributeValue(nodeIds=access_node_ids),
+                key=f"{marker} Use nodes",
+                value=NodeIdsNodeAttributeValue(nodeIds=use_node_ids),
             )
         )
     return attrs
 
 
-def _storage_reference_attrs(
-    storage: dict,
-    views: list[dict],
-    accesses: list[dict],
-    views_by_id: dict[str, dict],
-    span_label: str,
-    terminus_label: str,
+def _storage_use_attrs(
+    storage: dict, marker: str, uses: list[tuple[dict, dict]]
 ) -> list[KeyValue]:
-    """Build compact local facts plus navigation back to the Storage origin."""
+    """Describe only the View and effect facts local to one consumer Node."""
     origin = storage["origin"]
     view_lines = [
-        f"{view['id']} {view['aliasKind']} {_byte_range_label(view['range'])}"
-        for view in views
+        f"input {edge['targetNodeInputId']}: "
+        f"{_memory_region_label(memory['viewRegion'])}"
+        for edge, memory in uses
     ]
     access_lines = [
-        (
-            f"{_buffer_access_label(access['access'])} "
-            f"{access['nodeId']}:{access['inputId']} "
-            f"{_byte_range_label(views_by_id[access['viewId']]['range'])}"
-        )
-        for access in accesses
+        f"input {edge['targetNodeInputId']}: {_memory_edge_label(memory)}"
+        for edge, memory in uses
+        if _memory_access_label(memory["access"]) or memory.get("copy")
     ]
 
     attrs = [
-        KeyValue(key="Buffer Storage", value=storage["id"]),
+        KeyValue(key=f"{marker} Storage", value=storage["id"]),
         KeyValue(
-            key="Storage origin node",
+            key=f"{marker} Origin node",
             value=NodeIdsNodeAttributeValue(nodeIds=[origin["nodeId"]]),
         ),
-        KeyValue(key="Static use span", value=span_label),
-        KeyValue(key="Storage terminus", value=terminus_label),
+        KeyValue(key=f"{marker} View", value="\n".join(view_lines)),
     ]
-    if view_lines:
-        attrs.append(KeyValue(key="Buffer Views", value="\n".join(view_lines)))
     if access_lines:
-        attrs.append(
-            KeyValue(key="Buffer Accesses", value="\n".join(access_lines))
-        )
+        attrs.append(KeyValue(key=f"{marker} Access", value="\n".join(access_lines)))
     return attrs
 
 
-def _storage_details_by_node(graph: dict) -> dict[str, list[KeyValue]]:
-    """Index Storage details in linear time for Model Explorer Node selection."""
+def _storage_details_by_node(
+    graph: dict, presentation: dict[str, dict]
+) -> dict[str, list[KeyValue]]:
+    """Derive Node details by scanning memory metadata exactly once."""
     result: dict[str, list[KeyValue]] = {}
-    for storage in graph.get("bufferStorages", []):
-        origin_node_id = storage["origin"]["nodeId"]
-        views_by_id = {view["id"]: view for view in storage["views"]}
-        accesses_by_id = {
-            access["id"]: access for access in storage["accesses"]
-        }
-        span_label = _static_use_span_label(storage, accesses_by_id)
-        terminus_label = _storage_terminus_label(storage)
-        result.setdefault(origin_node_id, []).extend(
-            _storage_detail_attrs(
-                storage, views_by_id, span_label, terminus_label
+    uses: dict[str, dict[str, list[tuple[dict, dict]]]] = {}
+    for node in graph.get("nodes", []):
+        for edge in node.get("incomingEdges", []):
+            memory = edge.get("metadata", {}).get("memory")
+            if memory is None:
+                continue
+            uses.setdefault(memory["storageId"], {}).setdefault(node["id"], []).append(
+                (edge, memory)
             )
-        )
 
-        views_by_node: dict[str, list[dict]] = {}
-        for view in storage["views"]:
-            views_by_node.setdefault(view["nodeId"], []).append(view)
-        accesses_by_node: dict[str, list[dict]] = {}
-        for access in storage["accesses"]:
-            accesses_by_node.setdefault(access["nodeId"], []).append(access)
-        node_ids = set(views_by_node) | set(accesses_by_node)
-        terminus = storage["staticUseSpan"]["terminus"]
-        if terminus["kind"] != "unknown":
-            node_ids.add(terminus["nodeId"])
-        for node_id in node_ids:
+    for storage_id, item in presentation.items():
+        storage = item["storage"]
+        marker = item["marker"]
+        by_node = uses.get(storage_id, {})
+        origin_node_id = storage["origin"]["nodeId"]
+        result.setdefault(origin_node_id, []).extend(
+            _storage_origin_attrs(storage, marker, list(by_node))
+        )
+        for node_id, node_uses in by_node.items():
             if node_id == origin_node_id:
                 continue
             result.setdefault(node_id, []).extend(
-                _storage_reference_attrs(
-                    storage,
-                    views_by_node.get(node_id, []),
-                    accesses_by_node.get(node_id, []),
-                    views_by_id,
-                    span_label,
-                    terminus_label,
-                )
+                _storage_use_attrs(storage, marker, node_uses)
             )
     return result
 
@@ -439,7 +403,8 @@ def _build_node(data: dict, storage_attrs: list[KeyValue]) -> GraphNode:
 
 
 def _dict_to_graph(data: dict) -> Graph:
-    storage_details = _storage_details_by_node(data)
+    presentation = _storage_presentation(data)
+    storage_details = _storage_details_by_node(data, presentation)
     return Graph(
         id=data["id"],
         nodes=[
@@ -447,7 +412,7 @@ def _dict_to_graph(data: dict) -> Graph:
             for node in data.get("nodes", [])
         ],
         groupNodeAttributes=data.get("groupNodeAttributes"),
-        tasksData=_buffer_flow_tasks(data.get("nodes", []), data["id"]),
+        tasksData=_memory_tasks(data, presentation),
     )
 
 
