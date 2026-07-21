@@ -22,7 +22,7 @@ from model_explorer.zygon_viewer_adapter import (
 from model_explorer.zygon_viewer_tools import find_viewer_tool
 
 _GRAPH = {
-    "schemaVersion": "zygon-viewer/graph/v4",
+    "schemaVersion": "zygon-viewer/graph/v5",
     "label": "model",
     "graphs": [
         {
@@ -73,7 +73,7 @@ def test_should_label_strided_memory_region_in_bytes():
     )
 
 
-def test_should_load_schema_v4_graph_json(tmp_path):
+def test_should_load_schema_v5_graph_json(tmp_path):
     model = tmp_path / "model.json"
     model.write_text(json.dumps(_GRAPH))
 
@@ -103,9 +103,9 @@ def test_should_reject_v1_graph_json(tmp_path):
         ZygonViewerAdapter().convert(str(model), {})
 
 
-def test_should_expose_memory_metadata_as_opt_in_storage_overlay(tmp_path):
+def test_should_project_writer_to_reader_content_flow(tmp_path):
     document = {
-        "schemaVersion": "zygon-viewer/graph/v4",
+        "schemaVersion": "zygon-viewer/graph/v5",
         "label": "bufferized",
         "graphs": [
             {
@@ -119,6 +119,7 @@ def test_should_expose_memory_metadata_as_opt_in_storage_overlay(tmp_path):
                     {
                         "id": "store",
                         "label": "memref.store",
+                        "outputsMetadata": [],
                         "incomingEdges": [
                             {
                                 "id": "edge-0",
@@ -214,9 +215,25 @@ def test_should_expose_memory_metadata_as_opt_in_storage_overlay(tmp_path):
                         ],
                     },
                 ],
+                "memoryDependencies": [
+                    {
+                        "id": "dependency-0",
+                        "storageId": "storage:alloc:0",
+                        "sourceNodeId": "store",
+                        "targetNodeId": "load",
+                        "region": {
+                            "kind": "contiguous",
+                            "offsetBytes": {"kind": "constant", "value": 20},
+                            "lengthBytes": {"kind": "constant", "value": 4},
+                        },
+                        "certainty": "must",
+                    }
+                ],
                 "storages": [
                     {
                         "id": "storage:alloc:0",
+                        "rootSsa": "@main::%alloc",
+                        "paletteSlot": 0,
                         "origin": {
                             "kind": "allocation",
                             "nodeId": "alloc",
@@ -240,38 +257,268 @@ def test_should_expose_memory_metadata_as_opt_in_storage_overlay(tmp_path):
 
     graph = result["graphCollections"][0].graphs[0]
     load = next(node for node in graph.nodes if node.id == "load")
-    assert [edge.id for edge in load.incomingEdges] == ["edge-1"]
+    assert load.incomingEdges == []
+    assert [(edge.sourceNodeId, edge.targetNodeId) for edge in graph.layoutEdges] == [
+        ("store", "load")
+    ]
     tasks = graph.tasksData.edgeOverlaysDataListLeftPane
     assert len(tasks) == 1
-    assert tasks[0].name == "Logical Storage"
-    assert tasks[0].selectByDefault is False
+    assert tasks[0].name == "Memory content"
+    assert tasks[0].selectByDefault is True
+    assert tasks[0].selectionMode == "single_highlight"
     assert tasks[0].graphName == "main"
     assert len(tasks[0].overlays) == 1
     overlay = tasks[0].overlays[0]
-    assert overlay.name == "S1"
+    assert overlay.name == "%alloc"
     assert overlay.edgeColor == "#4477AA"
-    assert overlay.dimNonOverlayNodes is True
+    assert overlay.dimNonOverlayNodes is False
+    assert overlay.alwaysVisible is True
+    assert overlay.storageFocusSelector == "@main::%alloc"
+    assert overlay.memberNodeIds == ["store", "load"]
     assert [edge.label for edge in overlay.edges] == [
-        "W [20, 24) bytes; copy target overlap=[24, 32) bytes",
-        "R [20, 24) bytes",
+        "content [20, 24) bytes",
     ]
-    allocation = next(node for node in graph.nodes if node.id == "alloc")
-    details = {attr.key: attr.value for attr in allocation.attrs}
-    assert details["S1 Storage"] == "storage:alloc:0"
-    assert details["S1 Origin"] == "allocation alloc:0"
-    assert details["S1 Region"] == "[0, 64) bytes"
-    assert details["S1 Memory space"] == "default"
-    assert details["S1 Use nodes"].nodeIds == ["store", "load"]
+    assert all(node.id != "alloc" for node in graph.nodes)
 
     store = next(node for node in graph.nodes if node.id == "store")
+    assert store.outputsMetadata == []
+    assert store.incomingEdges == []
     store_details = {attr.key: attr.value for attr in store.attrs}
-    assert store_details["S1 Storage"] == "storage:alloc:0"
-    assert store_details["S1 Origin node"].nodeIds == ["alloc"]
-    assert store_details["S1 View"] == "input 1: [16, 48) bytes"
-    assert store_details["S1 Access"] == (
+    assert store_details["%alloc Storage"] == "storage:alloc:0"
+    assert store_details["%alloc Root SSA"] == "@main::%alloc"
+    assert "%alloc Origin node" not in store_details
+    assert store_details["%alloc View"] == "input 1: [16, 48) bytes"
+    assert store_details["%alloc Access"] == (
         "input 1: W [20, 24) bytes; copy target overlap=[24, 32) bytes"
     )
+    assert store_details["%alloc Content consumers"].nodeIds == ["load"]
     assert "S1 Region" not in store_details
+
+    load_details = {attr.key: attr.value for attr in load.attrs}
+    assert load_details["%alloc Content producers"].nodeIds == ["store"]
+
+
+def test_should_coalesce_repeated_dps_view_and_preserve_operand_roles(tmp_path):
+    region = {
+        "kind": "contiguous",
+        "offsetBytes": {"kind": "constant", "value": 0},
+        "lengthBytes": {"kind": "constant", "value": 64},
+    }
+    edges = []
+    for edge_id, input_id, kind in (
+        ("input-edge", "0", "input"),
+        ("init-edge", "1", "init"),
+    ):
+        access_key = "readRegion" if kind == "input" else "writeRegion"
+        edges.append(
+            {
+                "id": edge_id,
+                "sourceNodeId": "alloc",
+                "sourceNodeOutputId": "0",
+                "targetNodeInputId": input_id,
+                "metadata": {
+                    "memory": {
+                        "storageId": "storage",
+                        "viewRegion": region,
+                        "access": {access_key: region},
+                        "dpsRole": {"kind": kind, "index": 0},
+                    }
+                },
+            }
+        )
+    document = {
+        "schemaVersion": "zygon-viewer/graph/v5",
+        "label": "dps",
+        "graphs": [
+            {
+                "id": "main",
+                "nodes": [
+                    {
+                        "id": "alloc",
+                        "label": "memref.alloc",
+                        "outputsMetadata": [{"id": "0", "attrs": []}],
+                    },
+                    {
+                        "id": "generic",
+                        "label": "linalg.generic",
+                        "incomingEdges": edges,
+                    },
+                ],
+                "storages": [
+                    {
+                        "id": "storage",
+                        "rootSsa": "@main::%alloc",
+                        "paletteSlot": 3,
+                        "origin": {
+                            "kind": "allocation",
+                            "nodeId": "alloc",
+                            "outputId": "0",
+                        },
+                        "region": region,
+                        "memorySpace": "default",
+                    }
+                ],
+            }
+        ],
+    }
+    model = tmp_path / "dps.json"
+    model.write_text(json.dumps(document))
+
+    graph = ZygonViewerAdapter().convert(str(model), {})["graphCollections"][
+        0
+    ].graphs[0]
+
+    assert all(node.id != "alloc" for node in graph.nodes)
+    generic = next(node for node in graph.nodes if node.id == "generic")
+    assert generic.incomingEdges == []
+    overlay = graph.tasksData.edgeOverlaysDataListLeftPane[0].overlays[0]
+    assert overlay.edges == []
+    assert overlay.memberNodeIds == ["generic"]
+    details = {attr.key: attr.value for attr in generic.attrs}
+    assert details["%alloc Root SSA"] == "@main::%alloc"
+    assert details["%alloc Access"] == (
+        "ins[0]: R [0, 64) bytes; outs[0]: W [0, 64) bytes"
+    )
+    assert generic.style.accentColors == ["#CCBB44"]
+
+
+def test_should_keep_argument_storage_origin_visible(tmp_path):
+    region = {
+        "kind": "contiguous",
+        "offsetBytes": {"kind": "constant", "value": 0},
+        "lengthBytes": {"kind": "constant", "value": 16},
+    }
+    document = {
+        "schemaVersion": "zygon-viewer/graph/v5",
+        "label": "argument",
+        "graphs": [
+            {
+                "id": "main",
+                "nodes": [
+                    {
+                        "id": "arg0",
+                        "label": "arg0",
+                        "outputsMetadata": [{"id": "0", "attrs": []}],
+                    },
+                    {
+                        "id": "load",
+                        "label": "memref.load",
+                        "incomingEdges": [
+                            {
+                                "id": "arg-to-load",
+                                "sourceNodeId": "arg0",
+                                "sourceNodeOutputId": "0",
+                                "targetNodeInputId": "0",
+                                "metadata": {
+                                    "memory": {
+                                        "storageId": "argument-storage",
+                                        "viewRegion": region,
+                                        "access": {"readRegion": region},
+                                    }
+                                },
+                            }
+                        ],
+                    },
+                ],
+                "storages": [
+                    {
+                        "id": "argument-storage",
+                        "rootSsa": "@main::%arg0",
+                        "paletteSlot": 0,
+                        "origin": {
+                            "kind": "argument",
+                            "nodeId": "arg0",
+                            "outputId": "0",
+                        },
+                        "region": region,
+                        "memorySpace": "default",
+                    }
+                ],
+            }
+        ],
+    }
+    model = tmp_path / "argument.json"
+    model.write_text(json.dumps(document))
+
+    graph = ZygonViewerAdapter().convert(str(model), {})["graphCollections"][
+        0
+    ].graphs[0]
+
+    assert [node.id for node in graph.nodes] == ["arg0", "load"]
+    load = graph.nodes[1]
+    assert [edge.id for edge in load.incomingEdges] == ["arg-to-load"]
+    details = {attr.key: attr.value for attr in load.attrs}
+    assert details["%arg0 Origin node"].nodeIds == ["arg0"]
+
+
+def test_should_show_may_dependency_only_for_primary_storage_focus(tmp_path):
+    region = {
+        "kind": "unknown",
+        "reason": "dynamic access",
+    }
+    graph = {
+        "id": "main",
+        "nodes": [
+            {
+                "id": "alloc",
+                "label": "memref.alloc",
+                "outputsMetadata": [{"id": "0", "attrs": []}],
+            },
+            {"id": "writer", "label": "memref.store", "outputsMetadata": []},
+            {"id": "reader", "label": "memref.load"},
+        ],
+        "memoryDependencies": [
+            {
+                "id": "may-0",
+                "storageId": "storage",
+                "sourceNodeId": "writer",
+                "targetNodeId": "reader",
+                "region": region,
+                "certainty": "may",
+            }
+        ],
+        "storages": [
+            {
+                "id": "storage",
+                "rootSsa": "@main::%alloc",
+                "paletteSlot": 2,
+                "origin": {
+                    "kind": "allocation",
+                    "nodeId": "alloc",
+                    "outputId": "0",
+                },
+                "region": region,
+                "memorySpace": "default",
+            }
+        ],
+    }
+
+    def convert(primary: bool):
+        current = dict(graph)
+        if primary:
+            current["primaryStorageId"] = "storage"
+        document = {
+            "schemaVersion": "zygon-viewer/graph/v5",
+            "label": "may",
+            "graphs": [current],
+        }
+        model = tmp_path / ("focused.json" if primary else "full.json")
+        model.write_text(json.dumps(document))
+        return ZygonViewerAdapter().convert(str(model), {})["graphCollections"][0].graphs[0]
+
+    full_graph = convert(False)
+    assert next(node for node in full_graph.nodes if node.id == "reader").incomingEdges == []
+    assert full_graph.layoutEdges == []
+    assert full_graph.tasksData is None
+
+    focused_graph = convert(True)
+    reader = next(node for node in focused_graph.nodes if node.id == "reader")
+    assert reader.incomingEdges == []
+    assert [edge.id for edge in focused_graph.layoutEdges] == ["content:may-0"]
+    assert reader.style.tintColor == "#228833"
+    overlay = focused_graph.tasksData.edgeOverlaysDataListLeftPane[0].overlays[0]
+    assert overlay.dimNonOverlayNodes is True
+    assert overlay.edges[0].label == "may content unknown (dynamic access)"
 
 
 def test_should_recognize_only_v2_run_manifest(tmp_path):

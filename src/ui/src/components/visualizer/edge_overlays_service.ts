@@ -51,6 +51,9 @@ export class EdgeOverlaysService {
 
   readonly selectedOverlayIds = signal<string[]>([]);
 
+  /** Active item in a single-highlight legend; empty means weak overview. */
+  readonly highlightedOverlayId = signal<string>('');
+
   readonly selectedOverlays = computed(() => {
     const overlays: ProcessedEdgeOverlay[] = [];
     for (const overlayData of this.filteredLoadedEdgeOverlays()) {
@@ -61,6 +64,25 @@ export class EdgeOverlaysService {
       }
     }
     return overlays;
+  });
+
+  readonly highlightedOverlay = computed(() => {
+    const highlightedId = this.highlightedOverlayId();
+    if (!highlightedId) {
+      return undefined;
+    }
+    for (const overlayData of this.filteredLoadedEdgeOverlays()) {
+      if (overlayData.selectionMode !== 'single_highlight') {
+        continue;
+      }
+      const overlay = overlayData.processedOverlays.find(
+        (candidate) => candidate.id === highlightedId,
+      );
+      if (overlay) {
+        return overlay;
+      }
+    }
+    return undefined;
   });
 
   constructor(private readonly appService: AppService) {}
@@ -91,6 +113,9 @@ export class EdgeOverlaysService {
       this.selectedOverlayIds.update((selectedOverlayIds) => {
         return selectedOverlayIds.filter((id) => !overlayIdsToDelete.has(id));
       });
+      if (overlayIdsToDelete.has(this.highlightedOverlayId())) {
+        this.highlightedOverlayId.set('');
+      }
     }
   }
 
@@ -99,11 +124,31 @@ export class EdgeOverlaysService {
       let ids = [...selectedOverlayIds];
       if (selectedOverlayIds.includes(idToToggle)) {
         ids = ids.filter((id) => id !== idToToggle);
+        if (this.highlightedOverlayId() === idToToggle) {
+          this.highlightedOverlayId.set('');
+        }
       } else {
         ids.push(idToToggle);
       }
       return ids;
     });
+  }
+
+  /** Select one legend item for emphasis, or clear it when clicked again. */
+  toggleOverlayHighlight(idToToggle: string) {
+    const belongsToLegend = this.allLoadedEdgeOverlays().some(
+      (overlayData) =>
+        overlayData.selectionMode === 'single_highlight' &&
+        overlayData.processedOverlays.some(
+          (overlay) => overlay.id === idToToggle,
+        ),
+    );
+    if (!belongsToLegend) {
+      return;
+    }
+    this.highlightedOverlayId.update((current) =>
+      current === idToToggle ? '' : idToToggle,
+    );
   }
 
   addEdgeOverlayData(data: EdgeOverlaysData) {
@@ -194,7 +239,7 @@ export class EdgeOverlaysService {
   }
 }
 
-function processOverlay(
+export function processOverlay(
   overlayData: EdgeOverlaysData,
 ): ProcessedEdgeOverlaysData {
   const processedOverlayData: ProcessedEdgeOverlaysData = {
@@ -211,6 +256,9 @@ function processOverlay(
       ...overlay,
     };
     processedOverlayData.processedOverlays.push(processedOverlay);
+    for (const nodeId of overlay.memberNodeIds ?? []) {
+      processedOverlay.nodeIds.add(nodeId);
+    }
     for (const edge of overlay.edges) {
       processedOverlay.nodeIds.add(edge.sourceNodeId);
       processedOverlay.nodeIds.add(edge.targetNodeId);

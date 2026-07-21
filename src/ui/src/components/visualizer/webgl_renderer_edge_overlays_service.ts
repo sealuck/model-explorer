@@ -20,10 +20,11 @@ import {Injectable, inject} from '@angular/core';
 import * as three from 'three';
 import {WEBGL_ELEMENT_Y_FACTOR} from './common/consts';
 import {Edge, EdgeOverlay, ProcessedEdgeOverlay} from './common/edge_overlays';
-import {GroupNode, ModelEdge, OpNode} from './common/model_graph';
+import {GroupNode, ModelEdge, ModelNode} from './common/model_graph';
 import {getIntersectionPoints} from './common/utils';
 import {EdgeOverlaysService} from './edge_overlays_service';
 import {ThreejsService} from './threejs_service';
+import {ColorVariable} from './visualizer_theme_service';
 import {WebglEdges} from './webgl_edges';
 import {WebglRenderer} from './webgl_renderer';
 import {WebglRendererThreejsService} from './webgl_renderer_threejs_service';
@@ -32,6 +33,10 @@ import {WebglTexts} from './webgl_texts';
 const THREE = three;
 
 const DEFAULT_EDGE_WIDTH = 1.5;
+const STORAGE_OVERVIEW_EDGE_WIDTH = 1;
+const STORAGE_HIGHLIGHT_EDGE_WIDTH = 3;
+const STORAGE_OVERVIEW_SURFACE_MIX = 0.5;
+const STORAGE_BACKGROUND_SURFACE_MIX = 0.8;
 
 interface QueueItem {
   nodeId: string;
@@ -64,17 +69,52 @@ export class WebglRendererEdgeOverlaysService {
     this.clearOverlaysData();
 
     const selectedNodeId = this.webglRenderer.selectedNodeId;
-    if (!selectedNodeId) {
-      return;
-    }
-
-    // Find overlays that contain the node from the selected overlays.
+    // Most overlays activate around a selected member Node. Always-visible
+    // overlays instead provide stable semantic topology, such as logical
+    // memory content flow, even before the user selects a Node.
     const selectedOverlays = this.edgeOverlaysService.selectedOverlays();
     for (const selectedOverlay of selectedOverlays) {
-      if (selectedOverlay.nodeIds.has(selectedNodeId)) {
+      if (
+        selectedOverlay.alwaysVisible === true ||
+        (selectedNodeId !== '' && selectedOverlay.nodeIds.has(selectedNodeId))
+      ) {
         this.curOverlays.push(selectedOverlay);
       }
     }
+  }
+
+  /** Return the active Storage legend item when it is currently rendered. */
+  getHighlightedStorageOverlay(): ProcessedEdgeOverlay | undefined {
+    const highlightedId =
+      this.edgeOverlaysService.highlightedOverlayId();
+    if (!highlightedId) {
+      return undefined;
+    }
+    return this.curOverlays.find(
+      (overlay) =>
+        overlay.id === highlightedId &&
+        Boolean(overlay.storageFocusSelector),
+    );
+  }
+
+  /**
+   * Project active Storage members onto the current expanded namespace view.
+   * Explicit members cover one-operation paths; edge endpoints cover ordinary
+   * paths. Hidden descendants map to their nearest rendered group node.
+   */
+  getHighlightedRenderedNodeIds(): Set<string> {
+    const result = new Set<string>();
+    const overlay = this.getHighlightedStorageOverlay();
+    if (!overlay) {
+      return result;
+    }
+    for (const nodeId of overlay.nodeIds) {
+      const renderedNode = this.getRenderedEndpoint(nodeId);
+      if (renderedNode) {
+        result.add(renderedNode.id);
+      }
+    }
+    return result;
   }
 
   clearOverlaysData() {
@@ -95,39 +135,46 @@ export class WebglRendererEdgeOverlaysService {
     // pair.
     const seenEdgePairs: Record<string, number> = {};
     const totalEdgePairs: Record<string, number> = {};
+    const visibleEdgesByOverlay = this.curOverlays.map((overlay) =>
+      this.getVisibleEdges(overlay),
+    );
+    const highlightedStorage = this.getHighlightedStorageOverlay();
 
     // Populate totalEdgePairs.
     for (let i = 0; i < this.curOverlays.length; i++) {
-      const subgraph = this.curOverlays[i];
-      for (const edge of subgraph.edges) {
-        const {sourceNodeId, targetNodeId, label} = edge;
-        if (!this.shouldShowEdge(subgraph, edge)) {
-          continue;
-        }
+      for (const edge of visibleEdgesByOverlay[i]) {
+        const {sourceNodeId, targetNodeId} = edge;
         this.addToEdgePairs(sourceNodeId, targetNodeId, totalEdgePairs);
       }
     }
 
     for (let i = 0; i < this.curOverlays.length; i++) {
       const subgraph = this.curOverlays[i];
-      const edgeWidth = subgraph.edgeWidth ?? DEFAULT_EDGE_WIDTH;
+      const isStorageOverlay = Boolean(subgraph.storageFocusSelector);
+      const isHighlighted = highlightedStorage?.id === subgraph.id;
+      const edgeWidth = isStorageOverlay
+        ? isHighlighted
+          ? STORAGE_HIGHLIGHT_EDGE_WIDTH
+          : STORAGE_OVERVIEW_EDGE_WIDTH
+        : subgraph.edgeWidth ?? DEFAULT_EDGE_WIDTH;
+      const edgeColor = this.getOverlayEdgeColor(
+        subgraph,
+        highlightedStorage,
+      );
       const edges: Array<{edge: ModelEdge; index: number}> = [];
       const curWebglEdges = new WebglEdges(
         edgeWidth,
         edgeWidth / DEFAULT_EDGE_WIDTH,
       );
-      for (const edge of subgraph.edges) {
+      for (const edge of visibleEdgesByOverlay[i]) {
         const {sourceNodeId, targetNodeId, label} = edge;
-        if (!this.shouldShowEdge(subgraph, edge)) {
-          continue;
-        }
 
         const sourceNode = this.webglRenderer.curModelGraph.nodesById[
           sourceNodeId
-        ] as OpNode;
+        ];
         const targetNode = this.webglRenderer.curModelGraph.nodesById[
           targetNodeId
-        ] as OpNode;
+        ];
         if (!sourceNode || !targetNode) {
           continue;
         }
@@ -169,7 +216,7 @@ export class WebglRendererEdgeOverlaysService {
         });
       }
       curWebglEdges.generateMesh(
-        new THREE.Color(subgraph.edgeColor),
+        edgeColor,
         edges,
         this.webglRenderer.curModelGraph,
       );
@@ -178,19 +225,72 @@ export class WebglRendererEdgeOverlaysService {
       this.overlaysEdgesList.push(curWebglEdges);
 
       // Edge labels.
+      // Storage overview labels overwhelm large bufferized graphs. Exact
+      // access/content labels return when that one Storage is highlighted.
       const labels =
-        this.webglRenderer.webglRendererEdgeTextsService.genLabelsOnEdges(
-          edges,
-          new THREE.Color(subgraph.edgeColor),
-          edgeWidth / 2,
-          96.5,
-          subgraph.edgeLabelFontSize ?? 7.5,
-        );
+        !isStorageOverlay || isHighlighted
+          ? this.webglRenderer.webglRendererEdgeTextsService.genLabelsOnEdges(
+              edges,
+              edgeColor,
+              edgeWidth / 2,
+              96.5,
+              subgraph.edgeLabelFontSize ?? 7.5,
+            )
+          : [];
       const curWebglTexts = new WebglTexts(this.threejsService);
       curWebglTexts.generateMesh(labels, true, false, true);
       this.webglRendererThreejsService.addToScene(curWebglTexts.mesh);
       this.overlaysEdgeTextsList.push(curWebglTexts);
     }
+  }
+
+  /**
+   * Projects semantic edges onto the currently rendered namespace frontier.
+   *
+   * A collapsed group hides all of its OpNodes. Drawing their original overlay
+   * coordinates creates lines and labels at stale/default positions. Promote a
+   * hidden endpoint to its nearest rendered ancestor and coalesce duplicate
+   * relations between the same visible pair. Exact labels return automatically
+   * when both endpoint Ops are visible again.
+   */
+  private getVisibleEdges(edgeOverlay: ProcessedEdgeOverlay): Edge[] {
+    const visibleByPair = new Map<string, Edge>();
+    for (const edge of edgeOverlay.edges) {
+      if (!this.shouldShowEdge(edgeOverlay, edge)) {
+        continue;
+      }
+      const source = this.getRenderedEndpoint(edge.sourceNodeId);
+      const target = this.getRenderedEndpoint(edge.targetNodeId);
+      if (!source || !target || source.id === target.id) {
+        continue;
+      }
+
+      const key = `${source.id}\u0000${target.id}`;
+      if (visibleByPair.has(key)) {
+        continue;
+      }
+      const endpointsAreExact =
+        source.id === edge.sourceNodeId && target.id === edge.targetNodeId;
+      visibleByPair.set(key, {
+        ...edge,
+        sourceNodeId: source.id,
+        targetNodeId: target.id,
+        label: endpointsAreExact ? edge.label : '',
+      });
+    }
+    return [...visibleByPair.values()];
+  }
+
+  /** Returns the Node or collapsed ancestor that owns visible coordinates. */
+  private getRenderedEndpoint(nodeId: string): ModelNode | undefined {
+    let node: ModelNode | undefined =
+      this.webglRenderer.curModelGraph.nodesById[nodeId];
+    while (node && !this.webglRenderer.isNodeRendered(node.id)) {
+      node = node.nsParentId
+        ? this.webglRenderer.curModelGraph.nodesById[node.nsParentId]
+        : undefined;
+    }
+    return node;
   }
 
   clearOverlaysEdges() {
@@ -229,7 +329,13 @@ export class WebglRendererEdgeOverlaysService {
         }
       }
     };
-    for (const subgraph of this.curOverlays) {
+    // Semantic overview/legend overlays project endpoints to the current
+    // namespace frontier. They must never expand a large graph as a side
+    // effect of selecting a Node or legend item.
+    const overlaysToReveal = this.curOverlays.filter(
+      (overlay) => overlay.alwaysVisible !== true,
+    );
+    for (const subgraph of overlaysToReveal) {
       for (const edge of subgraph.edges) {
         const {sourceNodeId, targetNodeId} = edge;
         if (!this.shouldShowEdge(subgraph, edge)) {
@@ -241,6 +347,31 @@ export class WebglRendererEdgeOverlaysService {
       }
     }
     return [...ids];
+  }
+
+  /** Resolve a theme-aware weak or highlighted edge color for one overlay. */
+  private getOverlayEdgeColor(
+    overlay: ProcessedEdgeOverlay,
+    highlightedStorage: ProcessedEdgeOverlay | undefined,
+  ): three.Color {
+    const color = new THREE.Color(overlay.edgeColor);
+    if (!overlay.storageFocusSelector) {
+      return color;
+    }
+    if (highlightedStorage?.id === overlay.id) {
+      return color;
+    }
+    const surface = new THREE.Color(
+      this.webglRenderer.visualizerThemeService.getColor(
+        ColorVariable.SURFACE_COLOR,
+      ),
+    );
+    return color.lerp(
+      surface,
+      highlightedStorage
+        ? STORAGE_BACKGROUND_SURFACE_MIX
+        : STORAGE_OVERVIEW_SURFACE_MIX,
+    );
   }
 
   private addToEdgePairs(

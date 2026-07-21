@@ -69,38 +69,66 @@ limitations under the License.
             @for (overlay of overlaySet.overlays; track overlay.id) {
               <div class="overlay-item">
                 <div class="overlay-name">
-                  <label>
-                    <input type="checkbox" [checked]="overlay.selected"
-                        (change)="toggleOverlaySelection(overlay)"/>
-                    {{overlay.name}}
-                  </label>
-                  @if (overlay.selected) {
-                    <div class="view-label" (click)="handleClickViewOverlay(overlay)">
-                      View
-                    </div>
+                  @if (overlaySet.selectionMode === 'single_highlight') {
+                    <button type="button"
+                        class="legend-selector"
+                        [class.highlighted]="overlay.highlighted"
+                        [attr.aria-pressed]="overlay.highlighted"
+                        (click)="handleHighlightOverlay(overlay)">
+                      <span class="legend-swatch"
+                          [style.backgroundColor]="overlay.processedOverlay.edgeColor"></span>
+                      <span class="legend-name">{{overlay.name}}</span>
+                      @if (overlay.highlighted) {
+                        <mat-icon class="legend-check">check</mat-icon>
+                      }
+                    </button>
+                  } @else {
+                    <label>
+                      <input type="checkbox" [checked]="overlay.selected"
+                          (change)="toggleOverlaySelection(overlay)"/>
+                      {{overlay.name}}
+                    </label>
                   }
-                </div>
-                <div class="overlay-controls">
-                  <!-- Whether to show edges that are connected to the currently selected node. -->
-                  <label class="show-edges-connected-to-selected-node-only">
-                    <input type="checkbox"
-                        [disabled]="!overlay.selected"
-                        [checked]="overlay.processedOverlay.showEdgesConnectedToSelectedNodeOnly"
-                        (change)="toggleShowEdgesConnectedToSelectedNode(overlay)"/>
-                    Only show edges connected to selected node
-                  </label>
-                  @if (overlay.processedOverlay.showEdgesConnectedToSelectedNodeOnly) {
-                    <div class="max-hops-container">
-                      <div class="max-hops-label">
-                        Maximum hops:
+                  <div class="overlay-actions">
+                    @if (overlay.processedOverlay.storageFocusSelector) {
+                      <button mat-icon-button
+                          class="overlay-action"
+                          matTooltip="Focus storage dataflow"
+                          aria-label="Focus storage dataflow"
+                          (click)="handleFocusStorage(overlay)">
+                        <mat-icon>filter_center_focus</mat-icon>
+                      </button>
+                    }
+                    @if (overlaySet.selectionMode !== 'single_highlight' && overlay.selected) {
+                      <div class="view-label" (click)="handleClickViewOverlay(overlay)">
+                        View
                       </div>
-                      <input type="number" min="1"
-                          [disabled]="!overlay.selected"
-                          [value]="overlay.processedOverlay.visibleEdgeHops ?? 1"
-                          (change)="handleMaxHopsChanged(overlay, $event.target.valueAsNumber)"/>
-                    </div>
-                  }
+                    }
+                  </div>
                 </div>
+                @if (overlaySet.selectionMode !== 'single_highlight') {
+                  <div class="overlay-controls">
+                    <!-- Whether to show edges that are connected to the currently selected node. -->
+                    <label class="show-edges-connected-to-selected-node-only">
+                      <input type="checkbox"
+                          [disabled]="!overlay.selected"
+                          [checked]="overlay.processedOverlay.showEdgesConnectedToSelectedNodeOnly"
+                          (change)="toggleShowEdgesConnectedToSelectedNode(overlay)"/>
+                      Only show edges connected to selected node
+                    </label>
+                    @if (overlay.processedOverlay.showEdgesConnectedToSelectedNodeOnly) {
+                      <div class="max-hops-container">
+                        <div class="max-hops-label">
+                          Maximum hops:
+                        </div>
+                        <input type="number" min="1"
+                            [disabled]="!overlay.selected"
+                            [value]="overlay.processedOverlay.visibleEdgeHops ?? 1"
+                            (change)="handleMaxHopsChanged(overlay, $event.target.valueAsNumber)"/>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
             }
           </div>

@@ -415,6 +415,23 @@ export class GraphProcessor {
   generateLayoutGraphConnections(modelGraph: ModelGraph) {
     modelGraph.layoutGraphEdges = {};
 
+    // Layout-only relations influence rank/order without becoming OpNode
+    // tensor edges. Keep their adjacency local to this layout pass so Stats,
+    // I/O tracing, and the info panel continue to describe SSA data flow only.
+    const layoutOutgoingTargets = new Map<string, Set<string>>();
+    const layoutIncomingSources = new Map<string, Set<string>>();
+    for (const edge of this.graph.layoutEdges ?? []) {
+      const outgoing =
+        layoutOutgoingTargets.get(edge.sourceNodeId) ?? new Set<string>();
+      outgoing.add(edge.targetNodeId);
+      layoutOutgoingTargets.set(edge.sourceNodeId, outgoing);
+
+      const incoming =
+        layoutIncomingSources.get(edge.targetNodeId) ?? new Set<string>();
+      incoming.add(edge.sourceNodeId);
+      layoutIncomingSources.set(edge.targetNodeId, incoming);
+    }
+
     // Find all op nodes that don't have incoming edges.
     let seedOpNodes: OpNode[] = [];
     const allNonHiddenOpNodes: OpNode[] = [];
@@ -427,7 +444,13 @@ export class GraphProcessor {
         (edge) =>
           !(modelGraph.nodesById[edge.sourceNodeId] as OpNode).hideInLayout,
       );
-      if (filteredIncomingEdges.length === 0) {
+      const hasVisibleLayoutInput = [
+        ...(layoutIncomingSources.get(node.id) ?? []),
+      ].some((sourceNodeId) => {
+        const sourceNode = modelGraph.nodesById[sourceNodeId] as OpNode;
+        return sourceNode != null && !sourceNode.hideInLayout;
+      });
+      if (filteredIncomingEdges.length === 0 && !hasVisibleLayoutInput) {
         seedOpNodes.push(node);
       }
     }
@@ -465,9 +488,17 @@ export class GraphProcessor {
       // For example, op node X's namespae is a/b/c, op node Y's namespace
       // is a/b/d, and X has an edge to Y. X and Y's common namespace is a/b.
       // So we mark a/b/c and a/b/d to be connected.
-      const outgoingEdges = curNode.outgoingEdges || [];
-      for (const edge of outgoingEdges) {
-        const targetNode = modelGraph.nodesById[edge.targetNodeId] as OpNode;
+      const outgoingTargetNodeIds = new Set(
+        (curNode.outgoingEdges || []).map((edge) => edge.targetNodeId),
+      );
+      for (const targetNodeId of layoutOutgoingTargets.get(curNode.id) ?? []) {
+        outgoingTargetNodeIds.add(targetNodeId);
+      }
+      for (const targetNodeId of outgoingTargetNodeIds) {
+        const targetNode = modelGraph.nodesById[targetNodeId] as OpNode;
+        if (!targetNode) {
+          continue;
+        }
         if (targetNode.hideInLayout) {
           continue;
         }
@@ -512,9 +543,11 @@ export class GraphProcessor {
         ] = true;
       }
 
-      for (const edge of outgoingEdges) {
-        const targetNode = modelGraph.nodesById[edge.targetNodeId] as OpNode;
-        queue.push(targetNode);
+      for (const targetNodeId of outgoingTargetNodeIds) {
+        const targetNode = modelGraph.nodesById[targetNodeId] as OpNode;
+        if (targetNode) {
+          queue.push(targetNode);
+        }
       }
     }
   }
@@ -744,6 +777,28 @@ export class GraphProcessor {
         node.descendantsOpNodeIds = descendants
           .filter((node) => node.nodeType === NodeType.OP_NODE)
           .map((node) => node.id);
+        const descendantStyles = descendants
+          .filter(isOpNode)
+          .map((descendant) => descendant.style)
+          .filter((style) => style != null);
+        const accentColors = [
+          ...new Set(
+            descendantStyles.flatMap((style) => style.accentColors ?? []),
+          ),
+        ];
+        const tintColors = [
+          ...new Set(
+            descendantStyles
+              .map((style) => style.tintColor)
+              .filter((color): color is string => color != null && color !== ''),
+          ),
+        ];
+        if (accentColors.length > 0 || tintColors.length === 1) {
+          node.style = {
+            accentColors,
+            tintColor: tintColors.length === 1 ? tintColors[0] : undefined,
+          };
+        }
         const opNodeCount = (node.descendantsOpNodeIds || []).length;
         minOpNodeCount = Math.min(opNodeCount, minOpNodeCount);
         maxOpNodeCount = Math.max(opNodeCount, maxOpNodeCount);

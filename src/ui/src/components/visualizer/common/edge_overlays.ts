@@ -39,6 +39,12 @@ export declare interface EdgeOverlaysData extends TaskData {
 
   /** Whether newly loaded overlays are selected immediately. Defaults true. */
   selectByDefault?: boolean;
+
+  /**
+   * Keep all overlays visible as a weak legend and allow one active emphasis.
+   * Omit this field to retain the ordinary checkbox visibility interaction.
+   */
+  selectionMode?: 'single_highlight';
 }
 
 /** An edge overlay. */
@@ -92,6 +98,18 @@ export declare interface EdgeOverlay {
 
   /** Dim rendered Nodes outside this overlay while it is active. */
   dimNonOverlayNodes?: boolean;
+
+  /** Render the enabled overlay without requiring a selected member Node. */
+  alwaysVisible?: boolean;
+
+  /** Logical-Storage selector accepted by the Zygon Focus route. */
+  storageFocusSelector?: string;
+
+  /**
+   * Overlay members that cannot be inferred from rendered edge endpoints.
+   * A one-operation Storage path is the canonical use case.
+   */
+  memberNodeIds?: string[];
 }
 
 /** An edge in the overlay. */
