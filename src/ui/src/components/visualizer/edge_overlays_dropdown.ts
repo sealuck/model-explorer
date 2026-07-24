@@ -42,6 +42,7 @@ import {EdgeOverlaysService} from './edge_overlays_service';
 interface OverlaysSet {
   id: string;
   name: string;
+  selectionMode?: 'single_highlight';
   overlays: OverlayItem[];
 }
 
@@ -49,6 +50,7 @@ interface OverlayItem {
   id: string;
   name: string;
   selected: boolean;
+  highlighted: boolean;
   processedOverlay: ProcessedEdgeOverlay;
 }
 
@@ -86,12 +88,15 @@ export class EdgeOverlaysDropdown {
     return overlays.map((overlay) => ({
       id: overlay.id,
       name: overlay.name,
+      selectionMode: overlay.selectionMode,
       overlays: overlay.processedOverlays.map((overlay) => ({
         id: overlay.id,
         name: overlay.name,
         selected: this.edgeOverlaysService
           .selectedOverlayIds()
           .includes(overlay.id),
+        highlighted:
+          this.edgeOverlaysService.highlightedOverlayId() === overlay.id,
         processedOverlay: overlay,
       })),
     }));
@@ -146,6 +151,10 @@ export class EdgeOverlaysDropdown {
     this.edgeOverlaysService.toggleOverlaySelection(overlay.id);
   }
 
+  handleHighlightOverlay(overlay: OverlayItem) {
+    this.edgeOverlaysService.toggleOverlayHighlight(overlay.id);
+  }
+
   handleClickViewOverlay(overlay: OverlayItem) {
     // Get the first node of the overlay.
     const edges = overlay.processedOverlay.edges;
@@ -156,6 +165,21 @@ export class EdgeOverlaysDropdown {
 
     // Reveal it.
     this.appService.setNodeToReveal(this.paneId, firstNodeId);
+  }
+
+  handleFocusStorage(overlay: OverlayItem) {
+    const selector = overlay.processedOverlay.storageFocusSelector;
+    const graph = this.appService.getPaneById(this.paneId)?.modelGraph;
+    if (!selector || !graph?.modelPath) {
+      this.showError('Storage Focus requires a loaded Zygon Viewer Graph.');
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set('graph_path', graph.modelPath);
+    params.set('graph_id', graph.id);
+    params.set('storage', selector);
+    window.open(`/focus?${params.toString()}`, '_blank', 'noopener');
   }
 
   toggleShowEdgesConnectedToSelectedNode(overlay: OverlayItem) {

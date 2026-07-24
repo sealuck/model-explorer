@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import tempfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
@@ -16,6 +17,7 @@ from .graph_builder import (
     Graph,
     GraphCollection,
     GraphNode,
+    GraphNodeStyle,
     IncomingEdge,
     KeyValue,
     MetadataItem,
@@ -173,6 +175,32 @@ _STORAGE_COLORS = (
 )
 
 
+@dataclass(frozen=True)
+class _AccessGroup:
+    """All occurrences of one exact memref View at one operation."""
+
+    target_node_id: str
+    source_node_id: str
+    source_node_output_id: str
+    storage_id: str
+    view_region: dict
+    edges: tuple[dict, ...]
+
+
+@dataclass(frozen=True)
+class _MemoryProjection:
+    """ME topology and presentation facts derived from Graph v5 evidence."""
+
+    incoming_edges_by_node: dict[str, list[dict]]
+    layout_edges: list[Edge]
+    overlay_edges_by_storage: dict[str, list[Edge]]
+    access_order_edges_by_storage: dict[str, list[Edge]]
+    member_node_ids_by_storage: dict[str, set[str]]
+    storage_ids_by_node: dict[str, set[str]]
+    access_groups: tuple[_AccessGroup, ...]
+    hidden_node_ids: frozenset[str]
+
+
 def _memory_access_label(access: dict) -> str:
     """Return a compact badge from the presence of typed effect regions."""
     if "readRegion" in access and "writeRegion" in access:
@@ -246,83 +274,505 @@ def _memory_edge_label(memory: dict) -> str:
 
 
 def _storage_presentation(graph: dict) -> dict[str, dict]:
-    """Assign short labels and colors locally; neither is Graph semantics."""
-    return {
-        storage["id"]: {
-            "marker": f"S{index + 1}",
-            "color": _STORAGE_COLORS[index % len(_STORAGE_COLORS)],
+    """Resolve stable Graph palette slots to ME-owned names and colors."""
+    storages = graph.get("storages", [])
+    short_names = [storage["rootSsa"].rsplit("::", 1)[-1] for storage in storages]
+    counts = Counter(short_names)
+    result = {}
+    for storage, short_name in zip(storages, short_names):
+        display_name = short_name if counts[short_name] == 1 else storage["rootSsa"]
+        result[storage["id"]] = {
+            "name": display_name,
+            "color": _STORAGE_COLORS[storage["paletteSlot"] % len(_STORAGE_COLORS)],
             "storage": storage,
         }
-        for index, storage in enumerate(graph.get("storages", []))
-    }
+    return result
 
 
-def _memory_tasks(graph: dict, presentation: dict[str, dict]) -> TasksData | None:
-    """Build one optional overlay per Storage from existing SSA edges."""
-    edges_by_storage: dict[str, list[Edge]] = {}
+def _operand_role(edge: dict) -> str:
+    """Use structured DPS roles; never infer linalg roles from operation text."""
+    memory = edge["metadata"]["memory"]
+    dps_role = memory.get("dpsRole")
+    if dps_role:
+        prefix = "ins" if dps_role["kind"] == "input" else "outs"
+        return f"{prefix}[{dps_role['index']}]"
+    return f"input {edge['targetNodeInputId']}"
+
+
+def _access_group_label(group: _AccessGroup) -> str:
+    """Describe every operand occurrence collapsed into one rendered lane."""
+    labels = []
+    for edge in group.edges:
+        memory_label = _memory_edge_label(edge["metadata"]["memory"])
+        label = f"{_operand_role(edge)}: {memory_label}"
+        if label not in labels:
+            labels.append(label)
+    return "; ".join(labels)
+
+
+def _collect_access_groups(graph: dict) -> tuple[_AccessGroup, ...]:
+    """Group exact Views while preserving their first occurrence order."""
+    grouped: dict[tuple[str, str, str], list[dict]] = {}
     for node in graph.get("nodes", []):
         for edge in node.get("incomingEdges", []):
             memory = edge.get("metadata", {}).get("memory")
             if memory is None:
                 continue
-            storage_id = memory["storageId"]
-            edges_by_storage.setdefault(storage_id, []).append(
-                Edge(
-                    sourceNodeId=edge["sourceNodeId"],
-                    targetNodeId=node["id"],
-                    id=edge["id"],
-                    sourceNodeOutputId=edge["sourceNodeOutputId"],
-                    targetNodeInputId=edge["targetNodeInputId"],
-                    label=_memory_edge_label(memory),
-                )
+            key = (
+                node["id"],
+                edge["sourceNodeId"],
+                edge.get("sourceNodeOutputId", "0"),
             )
+            grouped.setdefault(key, []).append(edge)
 
-    if not edges_by_storage:
+    result = []
+    for (target_id, source_id, output_id), edges in grouped.items():
+        first_memory = edges[0]["metadata"]["memory"]
+        for edge in edges[1:]:
+            memory = edge["metadata"]["memory"]
+            if (
+                memory["storageId"] != first_memory["storageId"]
+                or memory["viewRegion"] != first_memory["viewRegion"]
+            ):
+                raise RuntimeError(
+                    "Graph v5 exact-View edges disagree on Storage or region"
+                )
+        result.append(
+            _AccessGroup(
+                target_node_id=target_id,
+                source_node_id=source_id,
+                source_node_output_id=output_id,
+                storage_id=first_memory["storageId"],
+                view_region=first_memory["viewRegion"],
+                edges=tuple(edges),
+            )
+        )
+    return tuple(result)
+
+
+def _node_attr(data: dict, key: str) -> str | None:
+    """Return one string Node attribute without building a second wire model."""
+    for attr in data.get("attrs", []):
+        if attr.get("key") == key and isinstance(attr.get("value"), str):
+            return attr["value"]
+    return None
+
+
+def _storage_is_quiet_by_default(storage: dict, nodes_by_id: dict[str, dict]) -> bool:
+    """Hide only compiler state whose frontend ABI role is explicit."""
+    origin = storage["origin"]
+    if origin["kind"] == "global":
+        return True
+    if origin["kind"] != "argument":
+        return False
+    origin_node = nodes_by_id.get(origin["nodeId"])
+    if origin_node is None:
+        return False
+    return _node_attr(origin_node, "viewer.model_input_kind") in {
+        "parameter",
+        "buffer",
+    }
+
+
+def _node_order(data: dict, fallback: int) -> tuple[int, int]:
+    """Order projected operations by explicit MLIR order, then Graph order."""
+    value = _node_attr(data, "viewer.graph_order")
+    if value is not None:
+        try:
+            return int(value), fallback
+        except ValueError:
+            pass
+    return fallback, fallback
+
+
+def _has_memory_effect(group: _AccessGroup) -> bool:
+    """Exclude pure View construction from a Storage access timeline."""
+    return any(
+        "readRegion" in (access := edge["metadata"]["memory"]["access"])
+        or "writeRegion" in access
+        for edge in group.edges
+    )
+
+
+def _source_aware_label(data: dict) -> str:
+    """Pair a generic lowered op with the source operation that produced it."""
+    label = data.get("label", "")
+    if not label.startswith(("linalg.", "memref.")):
+        return label
+    alignment_key = _node_attr(data, "viewer.alignment_key")
+    if not alignment_key or "::" not in alignment_key:
+        return label
+    source_name = alignment_key.rsplit("::", 1)[-1]
+    if not source_name or source_name == label:
+        return label
+
+    # Long specialized linalg names dominate compact Focus nodes. The full op
+    # remains available in viewer.operation_text and the side panel.
+    badge = label
+    if label.startswith("linalg.conv"):
+        badge = "linalg.conv"
+    elif label.startswith("linalg.pooling"):
+        badge = "linalg.pooling"
+    return f"{source_name} [{badge}]"
+
+
+def _constant_interval(region: dict) -> tuple[int, int] | None:
+    """Return a half-open static byte interval when Graph proves one."""
+    if region.get("kind") != "contiguous":
         return None
-    overlays = []
-    for storage_id, item in presentation.items():
-        edges = edges_by_storage.get(storage_id)
-        if not edges:
+    offset = region.get("offsetBytes", {})
+    length = region.get("lengthBytes", {})
+    if offset.get("kind") != "constant" or length.get("kind") != "constant":
+        return None
+    begin = offset["value"]
+    return begin, begin + length["value"]
+
+
+def _interval_is_covered(interval: tuple[int, int], regions: list[dict]) -> bool:
+    """Prove that a union of static dependency regions covers one read."""
+    begin, end = interval
+    cursor = begin
+    intervals = sorted(
+        candidate
+        for region in regions
+        if (candidate := _constant_interval(region)) is not None
+    )
+    for candidate_begin, candidate_end in intervals:
+        if candidate_end <= cursor:
             continue
+        if candidate_begin > cursor:
+            break
+        cursor = max(cursor, candidate_end)
+        if cursor >= end:
+            return True
+    return cursor >= end
+
+
+def _read_is_supplied_by_dependencies(
+    group: _AccessGroup, dependencies: list[dict]
+) -> bool:
+    """Return true only when MUST dependencies fully replace the raw read."""
+    read_regions = [
+        memory["access"]["readRegion"]
+        for edge in group.edges
+        if "readRegion" in (memory := edge["metadata"]["memory"])["access"]
+    ]
+    if not read_regions:
+        return False
+    must_regions = [
+        dependency["region"]
+        for dependency in dependencies
+        if dependency["certainty"] == "must"
+    ]
+    return all(
+        (interval := _constant_interval(region)) is not None
+        and _interval_is_covered(interval, must_regions)
+        for region in read_regions
+    )
+
+
+def _dependency_label(dependencies: list[dict]) -> str:
+    labels = []
+    for dependency in dependencies:
+        prefix = "content" if dependency["certainty"] == "must" else "may content"
+        label = f"{prefix} {_memory_region_label(dependency['region'])}"
+        if label not in labels:
+            labels.append(label)
+    return "; ".join(labels)
+
+
+def _allocation_origin_node_ids(graph: dict) -> frozenset[str]:
+    """Return allocation roots hidden only from the ME presentation Graph."""
+    return frozenset(
+        storage["origin"]["nodeId"]
+        for storage in graph.get("storages", [])
+        if storage["origin"]["kind"] == "allocation"
+    )
+
+
+def _project_memory(graph: dict) -> _MemoryProjection:
+    """Project Graph evidence into ME topology without changing Graph JSON.
+
+    Allocation operations remain authoritative Storage origins in Graph v5,
+    but are omitted from ME's visible operation graph. Their first-use access
+    edges therefore become node membership rather than dangling rendered
+    edges. Argument and global roots stay visible as actual data entrances.
+    """
+    groups = _collect_access_groups(graph)
+    dependencies = graph.get("memoryDependencies", [])
+    primary_storage_id = graph.get("primaryStorageId")
+    hidden_node_ids = _allocation_origin_node_ids(graph)
+    visible_node_ids = {
+        node["id"]
+        for node in graph.get("nodes", [])
+        if node["id"] not in hidden_node_ids
+    }
+    storage_by_id = {storage["id"]: storage for storage in graph.get("storages", [])}
+    nodes_by_id = {node["id"]: node for node in graph.get("nodes", [])}
+
+    incoming_by_node: dict[str, list[dict]] = {
+        node["id"]: [
+            edge
+            for edge in node.get("incomingEdges", [])
+            if edge.get("metadata", {}).get("memory") is None
+            and edge["sourceNodeId"] in visible_node_ids
+        ]
+        for node in graph.get("nodes", [])
+        if node["id"] in visible_node_ids
+    }
+    overlays: dict[str, list[Edge]] = {}
+    layout_edges: list[Edge] = []
+    layout_pairs: set[tuple[str, str]] = set()
+    access_order_edges: dict[str, list[Edge]] = {}
+    memberships: dict[str, set[str]] = {}
+    members_by_storage: dict[str, set[str]] = {}
+
+    def add_membership(node_id: str, storage_id: str) -> None:
+        """Record one visible operation as a member of a logical Storage."""
+        if node_id not in visible_node_ids:
+            return
+        memberships.setdefault(node_id, set()).add(storage_id)
+        members_by_storage.setdefault(storage_id, set()).add(node_id)
+
+    def add_layout_edge(edge: Edge) -> None:
+        """Add one topology constraint; parallel evidence stays in overlays."""
+        pair = (edge.sourceNodeId, edge.targetNodeId)
+        if edge.sourceNodeId == edge.targetNodeId or pair in layout_pairs:
+            return
+        layout_pairs.add(pair)
+        layout_edges.append(edge)
+
+    dependencies_by_target: dict[tuple[str, str], list[dict]] = {}
+    for dependency in dependencies:
+        dependencies_by_target.setdefault(
+            (dependency["targetNodeId"], dependency["storageId"]), []
+        ).append(dependency)
+
+    for group in groups:
+        add_membership(group.source_node_id, group.storage_id)
+        add_membership(group.target_node_id, group.storage_id)
+        target_dependencies = dependencies_by_target.get(
+            (group.target_node_id, group.storage_id), []
+        )
+        if _read_is_supplied_by_dependencies(group, target_dependencies):
+            continue
+
+        # The allocation remains the Storage identity but is not a visible ME
+        # endpoint. The consumer membership above preserves single-operation
+        # paths without creating an edge from a node that is not rendered.
+        if group.source_node_id in hidden_node_ids:
+            continue
+
+        # One representative ordinary edge keeps initial reads, pure writes,
+        # and View construction anchored at a visible argument/global root.
+        representative = group.edges[0]
+        storage = storage_by_id[group.storage_id]
+        # Torch frontends explicitly distinguish user inputs from lifted state.
+        # Keep real inputs (and unclassified generic MLIR arguments) in ordinary
+        # dataflow while moving only known parameters/buffers to on-demand lanes.
+        if not _storage_is_quiet_by_default(storage, nodes_by_id):
+            incoming_by_node[group.target_node_id].append(representative)
+        overlays.setdefault(group.storage_id, []).append(
+            Edge(
+                sourceNodeId=group.source_node_id,
+                targetNodeId=group.target_node_id,
+                id=representative["id"],
+                sourceNodeOutputId=group.source_node_output_id,
+                targetNodeInputId=representative["targetNodeInputId"],
+                label=_access_group_label(group),
+            )
+        )
+    # Disjoint regions between the same Node pair share one ME lane while the
+    # Graph artifact retains every dependency as an independent evidence row.
+    dependency_groups: dict[tuple[str, str, str], list[dict]] = {}
+    for dependency in dependencies:
+        if dependency["certainty"] == "may" and (
+            primary_storage_id != dependency["storageId"]
+        ):
+            continue
+        key = (
+            dependency["storageId"],
+            dependency["sourceNodeId"],
+            dependency["targetNodeId"],
+        )
+        dependency_groups.setdefault(key, []).append(dependency)
+
+    rendered_dependency_pairs: dict[str, set[tuple[str, str]]] = {}
+    for (
+        storage_id,
+        source_id,
+        target_id,
+    ), grouped_dependencies in dependency_groups.items():
+        add_membership(source_id, storage_id)
+        add_membership(target_id, storage_id)
+        if source_id in hidden_node_ids or target_id in hidden_node_ids:
+            continue
+        edge_id = f"content:{grouped_dependencies[0]['id']}"
+        add_layout_edge(
+            Edge(sourceNodeId=source_id, targetNodeId=target_id, id=edge_id)
+        )
+        rendered_dependency_pairs.setdefault(storage_id, set()).add(
+            (source_id, target_id)
+        )
+        overlays.setdefault(storage_id, []).append(
+            Edge(
+                sourceNodeId=source_id,
+                targetNodeId=target_id,
+                id=edge_id,
+                label=_dependency_label(grouped_dependencies),
+            )
+        )
+
+    # Content dependencies intentionally stop at a complete overwrite. Keep a
+    # separate access-order relation so a Storage Focus remains one temporal
+    # sequence without claiming that old bytes flow into the new content epoch.
+    fallback_order = {
+        node["id"]: index for index, node in enumerate(graph.get("nodes", []))
+    }
+    explicit_order = {
+        node["id"]: _node_order(node, index)
+        for index, node in enumerate(graph.get("nodes", []))
+    }
+    access_nodes: dict[str, set[str]] = {}
+    for group in groups:
+        if _has_memory_effect(group) and group.target_node_id in visible_node_ids:
+            access_nodes.setdefault(group.storage_id, set()).add(group.target_node_id)
+    for storage_id, node_ids in access_nodes.items():
+        ordered = sorted(
+            node_ids,
+            key=lambda node_id: explicit_order.get(
+                node_id, (fallback_order.get(node_id, 0), 0)
+            ),
+        )
+        content_pairs = rendered_dependency_pairs.get(storage_id, set())
+        for source_id, target_id in zip(ordered, ordered[1:]):
+            pair = (source_id, target_id)
+            if pair in content_pairs:
+                continue
+            edge = Edge(
+                sourceNodeId=source_id,
+                targetNodeId=target_id,
+                id=f"access-order:{storage_id}:{source_id}->{target_id}",
+                label="next access (no content flow)",
+            )
+            add_layout_edge(edge)
+            access_order_edges.setdefault(storage_id, []).append(edge)
+    for storage in graph.get("storages", []):
+        add_membership(storage["origin"]["nodeId"], storage["id"])
+
+    return _MemoryProjection(
+        incoming_edges_by_node=incoming_by_node,
+        layout_edges=layout_edges,
+        overlay_edges_by_storage=overlays,
+        access_order_edges_by_storage=access_order_edges,
+        member_node_ids_by_storage=members_by_storage,
+        storage_ids_by_node=memberships,
+        access_groups=groups,
+        hidden_node_ids=hidden_node_ids,
+    )
+
+
+def _memory_tasks(
+    graph: dict,
+    presentation: dict[str, dict],
+    projection: _MemoryProjection,
+) -> TasksData | None:
+    """Build a weak baseline lane and selectable legend item per Storage."""
+    overlays = []
+    primary_storage_id = graph.get("primaryStorageId")
+    node_order = {
+        node["id"]: index for index, node in enumerate(graph.get("nodes", []))
+    }
+    nodes_by_id = {node["id"]: node for node in graph.get("nodes", [])}
+    presentation_items = list(presentation.items())
+    # Hidden allocations depend on the legend for discovery, so keep them
+    # ahead of already-visible argument/global roots. Python's stable sort
+    # preserves Graph order within each origin class.
+    origin_priority = {"allocation": 0, "argument": 1, "global": 1}
+    presentation_items.sort(
+        key=lambda pair: origin_priority[pair[1]["storage"]["origin"]["kind"]]
+    )
+    for storage_id, item in presentation_items:
+        edges = projection.overlay_edges_by_storage.get(storage_id, [])
+        member_node_ids = sorted(
+            projection.member_node_ids_by_storage.get(storage_id, set()),
+            key=node_order.__getitem__,
+        )
+        if not edges and not member_node_ids:
+            continue
+        quiet_by_default = _storage_is_quiet_by_default(item["storage"], nodes_by_id)
         overlays.append(
             EdgeOverlay(
-                name=item["marker"],
+                name=item["name"],
                 edgeColor=item["color"],
                 edges=edges,
                 showEdgesConnectedToSelectedNodeOnly=False,
-                dimNonOverlayNodes=True,
+                dimNonOverlayNodes=primary_storage_id == storage_id,
+                alwaysVisible=(
+                    not quiet_by_default or primary_storage_id == storage_id
+                ),
+                storageFocusSelector=item["storage"]["rootSsa"],
+                memberNodeIds=member_node_ids,
             )
         )
+    if not overlays:
+        return None
     data = EdgeOverlaysData(
-        name="Logical Storage",
+        name="Memory content",
         overlays=overlays,
-        selectByDefault=False,
+        selectByDefault=True,
         graphName=graph["id"],
+        selectionMode="single_highlight",
     )
-    return TasksData(edgeOverlaysDataListLeftPane=[data])
+    task_data = [data]
+    if primary_storage_id:
+        order_edges = projection.access_order_edges_by_storage.get(
+            primary_storage_id, []
+        )
+        primary = presentation.get(primary_storage_id)
+        if order_edges and primary:
+            task_data.append(
+                EdgeOverlaysData(
+                    name="Storage access order",
+                    overlays=[
+                        EdgeOverlay(
+                            name=f"{primary['name']} access order",
+                            edgeColor="#777777",
+                            edgeWidth=1,
+                            edges=order_edges,
+                            showEdgesConnectedToSelectedNodeOnly=False,
+                            alwaysVisible=True,
+                        )
+                    ],
+                    selectByDefault=True,
+                    graphName=graph["id"],
+                )
+            )
+    return TasksData(edgeOverlaysDataListLeftPane=task_data)
 
 
 def _storage_origin_attrs(
-    storage: dict, marker: str, use_node_ids: list[str]
+    storage: dict, name: str, use_node_ids: list[str]
 ) -> list[KeyValue]:
     """Describe the minimal root record on the Storage origin Node."""
     origin = storage["origin"]
     attrs = [
-        KeyValue(key=f"{marker} Storage", value=storage["id"]),
+        KeyValue(key=f"{name} Storage", value=storage["id"]),
+        KeyValue(key=f"{name} Root SSA", value=storage["rootSsa"]),
         KeyValue(
-            key=f"{marker} Origin",
+            key=f"{name} Origin",
             value=f"{origin['kind']} {origin['nodeId']}:{origin['outputId']}",
         ),
         KeyValue(
-            key=f"{marker} Region",
+            key=f"{name} Region",
             value=_memory_region_label(storage["region"]),
         ),
-        KeyValue(key=f"{marker} Memory space", value=storage["memorySpace"]),
+        KeyValue(key=f"{name} Memory space", value=storage["memorySpace"]),
     ]
     if use_node_ids:
         attrs.append(
             KeyValue(
-                key=f"{marker} Use nodes",
+                key=f"{name} Use nodes",
                 value=NodeIdsNodeAttributeValue(nodeIds=use_node_ids),
             )
         )
@@ -330,89 +780,175 @@ def _storage_origin_attrs(
 
 
 def _storage_use_attrs(
-    storage: dict, marker: str, uses: list[tuple[dict, dict]]
+    storage: dict,
+    name: str,
+    groups: list[_AccessGroup],
+    origin_is_visible: bool,
 ) -> list[KeyValue]:
-    """Describe only the View and effect facts local to one consumer Node."""
+    """Describe the Storage identity, View, and effects at one consumer."""
     origin = storage["origin"]
     view_lines = [
-        f"input {edge['targetNodeInputId']}: "
-        f"{_memory_region_label(memory['viewRegion'])}"
-        for edge, memory in uses
+        f"{', '.join(_operand_role(edge) for edge in group.edges)}: "
+        f"{_memory_region_label(group.view_region)}"
+        for group in groups
     ]
-    access_lines = [
-        f"input {edge['targetNodeInputId']}: {_memory_edge_label(memory)}"
-        for edge, memory in uses
-        if _memory_access_label(memory["access"]) or memory.get("copy")
-    ]
+    access_lines = [_access_group_label(group) for group in groups]
 
-    attrs = [
-        KeyValue(key=f"{marker} Storage", value=storage["id"]),
-        KeyValue(
-            key=f"{marker} Origin node",
-            value=NodeIdsNodeAttributeValue(nodeIds=[origin["nodeId"]]),
-        ),
-        KeyValue(key=f"{marker} View", value="\n".join(view_lines)),
-    ]
+    attrs = [KeyValue(key=f"{name} Storage", value=storage["id"])]
+    if origin_is_visible:
+        attrs.append(
+            KeyValue(
+                key=f"{name} Origin node",
+                value=NodeIdsNodeAttributeValue(nodeIds=[origin["nodeId"]]),
+            )
+        )
+    else:
+        # A node reference would be dangling because allocation roots are
+        # intentionally absent from the ME projection. Keep the parsed SSA as
+        # stable, human-readable identity instead.
+        attrs.append(KeyValue(key=f"{name} Root SSA", value=storage["rootSsa"]))
+    attrs.append(KeyValue(key=f"{name} View", value="\n".join(view_lines)))
     if access_lines:
-        attrs.append(KeyValue(key=f"{marker} Access", value="\n".join(access_lines)))
+        attrs.append(KeyValue(key=f"{name} Access", value="\n".join(access_lines)))
     return attrs
 
 
 def _storage_details_by_node(
-    graph: dict, presentation: dict[str, dict]
+    graph: dict,
+    presentation: dict[str, dict],
+    projection: _MemoryProjection,
 ) -> dict[str, list[KeyValue]]:
-    """Derive Node details by scanning memory metadata exactly once."""
+    """Derive root, exact-View, and writer/reader details for each Node."""
     result: dict[str, list[KeyValue]] = {}
-    uses: dict[str, dict[str, list[tuple[dict, dict]]]] = {}
-    for node in graph.get("nodes", []):
-        for edge in node.get("incomingEdges", []):
-            memory = edge.get("metadata", {}).get("memory")
-            if memory is None:
-                continue
-            uses.setdefault(memory["storageId"], {}).setdefault(node["id"], []).append(
-                (edge, memory)
-            )
+    uses: dict[str, dict[str, list[_AccessGroup]]] = {}
+    for group in projection.access_groups:
+        uses.setdefault(group.storage_id, {}).setdefault(
+            group.target_node_id, []
+        ).append(group)
+
+    content_inputs: dict[tuple[str, str], list[str]] = {}
+    content_outputs: dict[tuple[str, str], list[str]] = {}
+    for dependency in graph.get("memoryDependencies", []):
+        input_key = (dependency["storageId"], dependency["targetNodeId"])
+        output_key = (dependency["storageId"], dependency["sourceNodeId"])
+        content_inputs.setdefault(input_key, []).append(dependency["sourceNodeId"])
+        content_outputs.setdefault(output_key, []).append(dependency["targetNodeId"])
 
     for storage_id, item in presentation.items():
         storage = item["storage"]
-        marker = item["marker"]
+        name = item["name"]
         by_node = uses.get(storage_id, {})
         origin_node_id = storage["origin"]["nodeId"]
-        result.setdefault(origin_node_id, []).extend(
-            _storage_origin_attrs(storage, marker, list(by_node))
-        )
-        for node_id, node_uses in by_node.items():
+        use_node_ids = list(by_node)
+        for dependency in graph.get("memoryDependencies", []):
+            if dependency["storageId"] != storage_id:
+                continue
+            for node_id in (dependency["sourceNodeId"], dependency["targetNodeId"]):
+                if node_id not in use_node_ids:
+                    use_node_ids.append(node_id)
+        origin_is_visible = origin_node_id not in projection.hidden_node_ids
+        if origin_is_visible:
+            result.setdefault(origin_node_id, []).extend(
+                _storage_origin_attrs(storage, name, use_node_ids)
+            )
+        for node_id, node_groups in by_node.items():
             if node_id == origin_node_id:
                 continue
             result.setdefault(node_id, []).extend(
-                _storage_use_attrs(storage, marker, node_uses)
+                _storage_use_attrs(storage, name, node_groups, origin_is_visible)
             )
+        for node_id in use_node_ids:
+            producers = list(
+                dict.fromkeys(
+                    producer
+                    for producer in content_inputs.get((storage_id, node_id), [])
+                    if producer not in projection.hidden_node_ids
+                )
+            )
+            consumers = list(
+                dict.fromkeys(
+                    consumer
+                    for consumer in content_outputs.get((storage_id, node_id), [])
+                    if consumer not in projection.hidden_node_ids
+                )
+            )
+            if producers:
+                result.setdefault(node_id, []).append(
+                    KeyValue(
+                        key=f"{name} Content producers",
+                        value=NodeIdsNodeAttributeValue(nodeIds=producers),
+                    )
+                )
+            if consumers:
+                result.setdefault(node_id, []).append(
+                    KeyValue(
+                        key=f"{name} Content consumers",
+                        value=NodeIdsNodeAttributeValue(nodeIds=consumers),
+                    )
+                )
     return result
 
 
-def _build_node(data: dict, storage_attrs: list[KeyValue]) -> GraphNode:
+def _build_node(
+    data: dict,
+    storage_attrs: list[KeyValue],
+    incoming_edges: list[dict],
+    style: GraphNodeStyle | None,
+) -> GraphNode:
     return GraphNode(
         id=data["id"],
-        label=data.get("label", ""),
+        label=_source_aware_label(data),
         namespace=data.get("namespace", ""),
-        incomingEdges=_to_edge_list(data.get("incomingEdges", [])),
+        incomingEdges=_to_edge_list(incoming_edges),
         inputsMetadata=_to_metadata_list(data.get("inputsMetadata", [])),
         outputsMetadata=_to_metadata_list(data.get("outputsMetadata", [])),
         attrs=_to_kv_list(data.get("attrs", [])) + storage_attrs,
+        style=style,
     )
 
 
 def _dict_to_graph(data: dict) -> Graph:
     presentation = _storage_presentation(data)
-    storage_details = _storage_details_by_node(data, presentation)
+    projection = _project_memory(data)
+    storage_details = _storage_details_by_node(data, presentation, projection)
+    primary_storage_id = data.get("primaryStorageId")
+
+    def node_style(node_id: str) -> GraphNodeStyle | None:
+        storage_ids = sorted(
+            projection.storage_ids_by_node.get(node_id, set()),
+            key=lambda storage_id: (
+                presentation[storage_id]["storage"]["paletteSlot"],
+                storage_id,
+            ),
+        )
+        if not storage_ids:
+            return None
+        return GraphNodeStyle(
+            accentColors=[
+                presentation[storage_id]["color"] for storage_id in storage_ids
+            ],
+            tintColor=(
+                presentation[primary_storage_id]["color"]
+                if primary_storage_id in storage_ids
+                else ""
+            ),
+        )
+
     return Graph(
         id=data["id"],
         nodes=[
-            _build_node(node, storage_details.get(node["id"], []))
+            _build_node(
+                node,
+                storage_details.get(node["id"], []),
+                projection.incoming_edges_by_node.get(node["id"], []),
+                node_style(node["id"]),
+            )
             for node in data.get("nodes", [])
+            if node["id"] not in projection.hidden_node_ids
         ],
         groupNodeAttributes=data.get("groupNodeAttributes"),
-        tasksData=_memory_tasks(data, presentation),
+        tasksData=_memory_tasks(data, presentation, projection),
+        layoutEdges=projection.layout_edges,
     )
 
 

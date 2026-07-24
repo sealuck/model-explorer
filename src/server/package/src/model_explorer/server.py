@@ -124,10 +124,11 @@ def _parse_node_data_paths(node_data_paths: str) -> list[str]:
 
 def _resolve_viewer_graph_path(graph_path: str) -> str:
   # Reuse the exact Graph projected when ME opened the source artifact.
-  if graph_path.endswith(('.mlir', '.fx')):
-    cached = get_cached_graph_json_path(graph_path)
-    if cached:
-      return cached
+  # Run Manifests are JSON too, so the cache lookup is deliberately based on
+  # adapter history rather than a filename suffix.
+  cached = get_cached_graph_json_path(graph_path)
+  if cached:
+    return cached
   return graph_path
 
 
@@ -608,27 +609,68 @@ def start(
     except Exception as err:
       return None, str(err)
 
+  def _run_storage_focus(
+      graph_path: str,
+      graph_id: str,
+      storage: str,
+  ):
+    """Extract one complete logical-Storage content path."""
+    try:
+      focus_tool = find_viewer_tool('zygon-viewer-focus')
+    except RuntimeError as error:
+      return None, str(error)
+
+    graph_path = _resolve_viewer_graph_path(graph_path)
+    args = [
+        focus_tool,
+        '--graph',
+        graph_path,
+        '--storage',
+        storage,
+        '-o',
+        '-',
+    ]
+    if graph_id:
+      args += ['--graph-id', graph_id]
+
+    try:
+      result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+      if result.returncode != 0:
+        return None, result.stderr.strip()
+      return result, None
+    except subprocess.TimeoutExpired:
+      return None, 'storage dataflow extraction timed out'
+    except Exception as err:
+      return None, str(err)
+
   @app.route('/focus')
   def focus():
-    """Extract focused dataflow subgraph and open in new tab."""
+    """Extract Node or logical-Storage dataflow and open it in a new tab."""
     graph_path = request.args.get('graph_path', '')
     graph_id = request.args.get('graph_id', '')
     seeds = [seed.strip() for seed in request.args.getlist('seed')]
     seeds = [seed for seed in seeds if seed]
+    storage = request.args.get('storage', '').strip()
     mode = request.args.get('mode', '')
     context = request.args.get('context', 'none')
     context_depth = request.args.get('context_depth', 'all')
     node_data_paths = request.args.get('node_data_paths', '')
 
-    validation_error = _validate_focus_request(
-        seeds, mode, context, context_depth, request.args
-    )
-    if validation_error:
-      return f'<h3>Error: {validation_error}</h3>', 400
-
-    result, error = _run_focus_dataflow(
-        graph_path, graph_id, seeds, mode, context, context_depth
-    )
+    if storage:
+      if seeds:
+        return '<h3>Error: storage cannot be combined with Node seeds.</h3>', 400
+      if _has_legacy_dataflow_params(request.args):
+        return f'<h3>Error: {_legacy_dataflow_params_error()}</h3>', 400
+      result, error = _run_storage_focus(graph_path, graph_id, storage)
+    else:
+      validation_error = _validate_focus_request(
+          seeds, mode, context, context_depth, request.args
+      )
+      if validation_error:
+        return f'<h3>Error: {validation_error}</h3>', 400
+      result, error = _run_focus_dataflow(
+          graph_path, graph_id, seeds, mode, context, context_depth
+      )
     if error:
       return f'<h3>Error: {error}</h3>'
 

@@ -16,7 +16,7 @@
  * ==============================================================================
  */
 
-import {EdgeOverlaysData} from './edge_overlays';
+import {Edge, EdgeOverlaysData} from './edge_overlays';
 import {
   GraphNodeConfig,
   GraphNodeStyle,
@@ -120,6 +120,9 @@ export declare interface Graph {
 
   // Layout-related options.
   layoutConfigs?: LayoutConfigs;
+
+  /** Node-level layout constraints that do not create tensor I/O ports. */
+  layoutEdges?: Edge[];
 
   //////////////////////////////////////////////////////////////////////////////
   // The following fields are set by model explorer. Users don't need to set

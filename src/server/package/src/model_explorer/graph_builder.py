@@ -53,6 +53,10 @@ class Graph:
   # Layout-related options.
   layoutConfigs: Union['LayoutConfigs', None] = None
 
+  # Node-level ordering constraints used by layout but not exposed as tensor
+  # input/output edges. This is suitable for non-SSA semantic relations.
+  layoutEdges: list['Edge'] = field(default_factory=list)
+
 
 @dataclass
 class GraphNode:
@@ -221,6 +225,20 @@ class GraphNodeStyle:
   # (optional)
   hoveredBorderColor: str = ''
 
+  # Categorical accent colors rendered as segments along the node edge.
+  #
+  # This keeps multi-membership information separate from background and
+  # border colors, which may already communicate focus and output state.
+  #
+  # (optional)
+  accentColors: list[str] = field(default_factory=list)
+
+  # Categorical color blended into the theme's normal node background.
+  # Unlike backgroundColor, this remains readable in both light and dark mode.
+  #
+  # (optional)
+  tintColor: str = ''
+
 
 @dataclass
 class GraphNodeConfig:
@@ -335,6 +353,18 @@ class EdgeOverlay:
   # Dim rendered nodes outside this overlay while it is active.
   dimNonOverlayNodes: bool = False
 
+  # Render this overlay whenever it is enabled, without requiring a selected
+  # node to activate it.
+  alwaysVisible: bool = False
+
+  # Optional logical-Storage selector for the Zygon Focus route.
+  storageFocusSelector: str = ''
+
+  # Nodes that belong to this overlay independently of its rendered edges.
+  # This lets a legend select a one-operation path whose only incoming edge
+  # originates at a presentation-hidden allocation node.
+  memberNodeIds: Union[list[str], None] = None
+
 
 @dataclass
 class EdgeOverlaysData:
@@ -353,6 +383,11 @@ class EdgeOverlaysData:
 
   # Graph id this overlay set belongs to. None applies to every Graph.
   graphName: Union[str, None] = None
+
+  # ``single_highlight`` keeps every overlay visible as a weak legend layer
+  # while allowing at most one item to become the active visual emphasis.
+  # None preserves upstream checkbox visibility semantics.
+  selectionMode: Union[Literal['single_highlight'], None] = None
 
 
 @dataclass

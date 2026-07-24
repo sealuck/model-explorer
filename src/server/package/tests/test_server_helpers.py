@@ -126,6 +126,66 @@ def test_focus_route_forwards_node_data_without_seed_roles(monkeypatch, tmp_path
   assert not (graph_path.parent / 'seed_roles.json').exists()
 
 
+def test_focus_route_extracts_storage_by_root_ssa(monkeypatch):
+  app = _capture_app(monkeypatch)
+  calls = []
+  subgraph = {
+      'schemaVersion': 'zygon-viewer/graph/v5',
+      'graphs': [{'id': 'main', 'primaryStorageId': 'storage', 'nodes': []}],
+  }
+  monkeypatch.setattr(
+      server, 'find_viewer_tool', lambda name: f'/bin/{name}'
+  )
+
+  def fake_run(args, capture_output, text, timeout):
+    calls.append(args)
+    return SimpleNamespace(returncode=0, stdout=json.dumps(subgraph), stderr='')
+
+  monkeypatch.setattr(server.subprocess, 'run', fake_run)
+
+  response = app.test_client().get(
+      '/focus',
+      query_string={
+          'graph_path': '/tmp/graph.json',
+          'graph_id': 'main',
+          'storage': '%alloc',
+      },
+  )
+
+  assert response.status_code == 302
+  assert calls == [[
+      '/bin/zygon-viewer-focus',
+      '--graph',
+      '/tmp/graph.json',
+      '--storage',
+      '%alloc',
+      '-o',
+      '-',
+      '--graph-id',
+      'main',
+  ]]
+  data = _redirect_data(response.headers['Location'])
+  graph_path = Path(data['models'][0]['url'])
+  assert json.loads(graph_path.read_text()) == subgraph
+
+
+def test_focus_route_rejects_mixed_storage_and_node_seeds(monkeypatch):
+  app = _capture_app(monkeypatch)
+
+  response = app.test_client().get(
+      '/focus',
+      query_string={
+          'graph_path': '/tmp/graph.json',
+          'storage': '%alloc',
+          'seed': '%value',
+          'mode': 'single',
+      },
+  )
+
+  assert response.status_code == 400
+  assert b'cannot be combined' in response.data
+
+
 def _capture_app(monkeypatch):
   captured = {}
 

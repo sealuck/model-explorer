@@ -201,6 +201,9 @@ export declare interface ModelNodeBase {
 
   /** The global position (y) of the node, relative to the svg element. */
   globalY?: number;
+
+  /** Semantic presentation inherited directly or summarized from descendants. */
+  style?: GraphNodeStyle;
 }
 
 /** An operation node in a model graph.  */
@@ -237,9 +240,6 @@ export declare interface OpNode extends ModelNodeBase {
 
   /** Ids for subgraphs. */
   subgraphIds?: string[];
-
-  /** The style of the node. */
-  style?: GraphNodeStyle;
 
   /** Custom configs for the node. */
   config?: GraphNodeConfig;

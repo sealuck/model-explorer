@@ -169,8 +169,11 @@ const SUBTLE_OUTPUT_NODE_BODY_OPACITY = 0.95;
 const SUBTLE_OUTPUT_NODE_BG_COLOR = '#dde7f5';
 const SUBTLE_OUTPUT_NODE_BORDER_COLOR = '#5d7ba8';
 const SUBTLE_OUTPUT_NODE_BORDER_WIDTH = 1.5;
-const FOCUS_SEED_NODE_BG_COLOR = '#4e9af1';
-const FOCUS_SEED_NODE_TEXT_COLOR = '#1f1f1f';
+const FOCUS_SEED_NODE_BORDER_COLOR = '#4e9af1';
+const FOCUS_SEED_NODE_BORDER_WIDTH = 2.5;
+const STORAGE_SELECTION_BORDER_WIDTH = 4;
+const STORAGE_ACCENT_STRIP_HEIGHT = 3;
+const STORAGE_TINT_FACTOR = 0.18;
 const ZOOM_FIT_ON_NODE_DURATION = 400;
 const EDGE_WIDTH = 1.0;
 const SUBGRAPH_INDICATOR_SIZE = 14;
@@ -351,6 +354,11 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     6,
     this.visualizerThemeService,
   );
+  private readonly nodeAccentStrips = new WebglRoundedRectangles(
+    1,
+    this.visualizerThemeService,
+  );
+  private nodeAccentSegmentIdsByNodeId: Record<string, string[]> = {};
   private readonly groupNodeIcons = new WebglTexts(this.threejsService);
   private readonly groupNodeIconBgs = new WebglRoundedRectangles(
     99,
@@ -369,6 +377,8 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
   readonly texts = new WebglTexts(this.threejsService);
   private readonly mousePos = new THREE.Vector2();
   private readonly focusOutputNodeHighlights!: WebglRendererHighlightNodesService;
+  private readonly focusSeedNodeHighlights!: WebglRendererHighlightNodesService;
+  private readonly storageSelectionHighlights!: WebglRendererHighlightNodesService;
   private readonly syncNavigationRelatedNodesHighlights!: WebglRendererHighlightNodesService;
   private readonly syncNavigationDiffHighlights!: WebglRendererHighlightNodesService;
   private draggingArea = false;
@@ -510,6 +520,14 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     this.focusOutputNodeHighlights = new WebglRendererHighlightNodesService(
       this,
       -WEBGL_ELEMENT_Y_FACTOR * 0.32,
+    );
+    this.focusSeedNodeHighlights = new WebglRendererHighlightNodesService(
+      this,
+      -WEBGL_ELEMENT_Y_FACTOR * 0.34,
+    );
+    this.storageSelectionHighlights = new WebglRendererHighlightNodesService(
+      this,
+      -WEBGL_ELEMENT_Y_FACTOR * 0.38,
     );
     this.syncNavigationRelatedNodesHighlights =
       new WebglRendererHighlightNodesService(
@@ -690,11 +708,17 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     // Handle selected edge overlays changes.
     effect(() => {
       this.webglRendererEdgeOverlaysService.edgeOverlaysService.selectedOverlayIds();
+      this.webglRendererEdgeOverlaysService.edgeOverlaysService.highlightedOverlayId();
       this.webglRendererEdgeOverlaysService.updateOverlaysData();
+      if (this.curModelGraph) {
+        this.updateNodesStyles();
+      }
 
-      // Automatically reveal all nodes in the edge overlays (if existed).
-      if (this.selectedNodeId !== '') {
-        if (this.webglRendererEdgeOverlaysService.curOverlays.length > 0) {
+      if (this.webglRendererEdgeOverlaysService.curOverlays.length > 0) {
+        // Selection-activated overlays retain the existing reveal behavior.
+        // Always-visible semantic overlays must not expand every group in a
+        // large model merely because they are enabled by default.
+        if (this.selectedNodeId !== '') {
           const deepestExpandedGroupNodeIds =
             this.webglRendererEdgeOverlaysService.getDeepestExpandedGroupNodeIds();
           if (deepestExpandedGroupNodeIds.length > 0) {
@@ -707,9 +731,12 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
             this.webglRendererThreejsService.render();
           }
         } else {
-          this.webglRendererEdgeOverlaysService.clearOverlaysEdges();
+          this.webglRendererEdgeOverlaysService.updateOverlaysEdges();
           this.webglRendererThreejsService.render();
         }
+      } else {
+        this.webglRendererEdgeOverlaysService.clearOverlaysEdges();
+        this.webglRendererThreejsService.render();
       }
     });
 
@@ -2374,6 +2401,8 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     const numNodes = this.nodesToRender.length;
 
     const nodeBodyRectangles: RoundedRectangleData[] = [];
+    const nodeAccentRectangles: RoundedRectangleData[] = [];
+    this.nodeAccentSegmentIdsByNodeId = {};
     const groupNodeIcons: LabelData[] = [];
     const groupNodeIconBgs: RoundedRectangleData[] = [];
     const subgraphIndicatorRectangles: RoundedRectangleData[] = [];
@@ -2417,9 +2446,17 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
         : new THREE.Color(
             this.visualizerThemeService.getColor(ColorVariable.OUTLINE_COLOR),
           );
-      if (isOpNode(node) && node.style) {
+      if (node.style) {
         if (node.style.backgroundColor) {
           bgColor = new THREE.Color(node.style.backgroundColor);
+        }
+        if (node.style.tintColor) {
+          // Blend from the current theme background instead of shipping a
+          // light-only pastel from an adapter.
+          bgColor = new THREE.Color(bgColor.r, bgColor.g, bgColor.b).lerp(
+            new THREE.Color(node.style.tintColor),
+            STORAGE_TINT_FACTOR,
+          );
         }
         if (node.style.borderColor) {
           borderColor = new THREE.Color(node.style.borderColor);
@@ -2500,6 +2537,37 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
           bgColor.g === opNodeBgColor.g &&
           bgColor.b === opNodeBgColor.b,
       });
+
+      if ((node.style?.accentColors?.length ?? 0) > 0) {
+        const accentColors = [...new Set(node.style!.accentColors)];
+        const usableWidth = Math.max(0, width - 4);
+        const segmentWidth = usableWidth / accentColors.length;
+        this.nodeAccentSegmentIdsByNodeId[node.id] = [];
+        for (let segmentIndex = 0; segmentIndex < accentColors.length; segmentIndex++) {
+          const segmentId = `${node.id}__accent_${segmentIndex}`;
+          this.nodeAccentSegmentIdsByNodeId[node.id].push(segmentId);
+          const color = new THREE.Color(accentColors[segmentIndex]);
+          nodeAccentRectangles.push({
+            id: segmentId,
+            nodeId: node.id,
+            index: nodeAccentRectangles.length,
+            bound: {
+              x: x + 2 + segmentWidth * (segmentIndex + 0.5),
+              y: y + height - STORAGE_ACCENT_STRIP_HEIGHT / 2 - 1,
+              width: segmentWidth,
+              height: STORAGE_ACCENT_STRIP_HEIGHT,
+            },
+            yOffset:
+              WEBGL_ELEMENT_Y_FACTOR * nodeIndex -
+              WEBGL_ELEMENT_Y_FACTOR * 0.12,
+            isRounded: false,
+            borderColor: color,
+            bgColor: color,
+            borderWidth: 0,
+            opacity: 1,
+          });
+        }
+      }
 
       // Render separator between the pinned node and the rest of the nodes.
       if (isGroupNode(node) && node.expanded && node.pinToTopOpNode) {
@@ -2704,6 +2772,8 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     this.webglRendererThreejsService.addToScene(
       this.nodeBodies.meshForRayCasting,
     );
+    this.nodeAccentStrips.generateMesh(nodeAccentRectangles);
+    this.webglRendererThreejsService.addToScene(this.nodeAccentStrips.mesh);
     this.groupNodeIcons.generateMesh(groupNodeIcons);
     this.webglRendererThreejsService.addToScene(this.groupNodeIcons.mesh);
     this.groupNodeIconBgs.generateMesh(groupNodeIconBgs, true);
@@ -2930,6 +3000,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
 
   private updateAnimatinProgress(t: number, options?: RenderGraphOptions) {
     this.nodeBodies.updateAnimationProgress(t);
+    this.nodeAccentStrips.updateAnimationProgress(t);
     this.groupNodeIcons.updateAnimationProgress(t);
     this.groupNodeIconBgs.updateAnimationProgress(t);
     this.subgraphIndicatorBgs.updateAnimationProgress(t);
@@ -3077,6 +3148,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
     this.nodeBodies.restoreBgColors();
     this.nodeBodies.restoreBorderWidths();
     this.nodeBodies.restoreOpacities();
+    this.nodeAccentStrips.restoreOpacities();
     this.groupNodeIconBgs.restoreOpacities();
     if (useSvgTextRenderer) {
       this.restoreSvgTextsOpacity();
@@ -3093,6 +3165,27 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       this.webglRendererIdenticalLayerService.restoreOpacity();
     }
     this.edges.restoreYOffsets();
+
+    const highlightedStorage =
+      this.webglRendererEdgeOverlaysService.getHighlightedStorageOverlay();
+    const highlightedStorageNodeIds =
+      this.webglRendererEdgeOverlaysService.getHighlightedRenderedNodeIds();
+    if (highlightedStorage && highlightedStorageNodeIds.size > 0) {
+      // Apply the same theme-aware tint used by a projected Buffer Focus, but
+      // derive it from the interactive legend rather than mutating Graph data.
+      const storageTint = new THREE.Color(
+        this.visualizerThemeService.getColor(
+          ColorVariable.SURFACE_CONTAINER_LOWEST_COLOR,
+        ),
+      ).lerp(
+        new THREE.Color(highlightedStorage.edgeColor),
+        STORAGE_TINT_FACTOR,
+      );
+      this.nodeBodies.updateBgColor(
+        [...highlightedStorageNodeIds],
+        storageTint,
+      );
+    }
 
     const node = this.curModelGraph.nodesById[this.selectedNodeId];
 
@@ -3181,6 +3274,25 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
         );
       }
     }
+    if (
+      this.selectedNodeId &&
+      (node.style?.accentColors?.length ?? 0) > 0
+    ) {
+      this.storageSelectionHighlights.setNodeHighlights(
+        {
+          [this.selectedNodeId]: {
+            nodeId: this.selectedNodeId,
+            borderColor: this.visualizerThemeService.getColor(
+              ColorVariable.PRIMARY_COLOR,
+            ),
+            borderWidth: STORAGE_SELECTION_BORDER_WIDTH,
+          },
+        },
+        true,
+      );
+    } else {
+      this.storageSelectionHighlights.clearNodeHighlights();
+    }
 
     // Group node icon.
     this.groupNodeIconBgs.updateOpacity([this.hoveredGroupNodeIconId], 0.1);
@@ -3262,6 +3374,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
           !tracingData.focusPathNodeIds.has(id) && this.isNodeRendered(id),
       );
       this.nodeBodies.updateOpacity(nodeIds, 0.2);
+      this.updateNodeAccentStripsOpacity(nodeIds, 0.2);
       if (useSvgTextRenderer) {
         this.setSvgTextsOpacity(nodeIds, 0.3);
       } else {
@@ -3293,16 +3406,19 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       );
     }
 
-    // Storage overlays are opt-in focus modes. Once the selected Node belongs
-    // to an active Storage, keep its complete Access chain readable by dimming
-    // unrelated Nodes. Other custom overlay kinds retain their old behavior.
+    // A Storage legend highlight and a projected Buffer Focus both dim Nodes
+    // outside their complete Access/content path. Ordinary overlays retain
+    // their upstream behavior.
     const dimmingOverlays =
       this.webglRendererEdgeOverlaysService.curOverlays.filter(
         (overlay) => overlay.dimNonOverlayNodes === true,
       );
-    if (dimmingOverlays.length > 0) {
-      const focusNodeIds = new Set<string>();
+    if (dimmingOverlays.length > 0 || highlightedStorageNodeIds.size > 0) {
+      const focusNodeIds = new Set<string>(highlightedStorageNodeIds);
       for (const overlay of dimmingOverlays) {
+        if (overlay.id === highlightedStorage?.id) {
+          continue;
+        }
         for (const nodeId of overlay.nodeIds) {
           focusNodeIds.add(nodeId);
         }
@@ -3311,6 +3427,7 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
         (id) => !focusNodeIds.has(id) && this.isNodeRendered(id),
       );
       this.nodeBodies.updateOpacity(nodeIds, 0.2);
+      this.updateNodeAccentStripsOpacity(nodeIds, 0.2);
       if (useSvgTextRenderer) {
         this.setSvgTextsOpacity(nodeIds, 0.3);
       } else {
@@ -3346,8 +3463,15 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
         allGraphOutputsNodeIds,
         SUBTLE_OUTPUT_NODE_BODY_OPACITY,
       );
+      const outputNodeIdsWithoutTint = allGraphOutputsNodeIds.filter((id) => {
+        const outputNode = this.curModelGraph.nodesById[id];
+        return (
+          (!isOpNode(outputNode) || !outputNode.style?.tintColor) &&
+          !highlightedStorageNodeIds.has(id)
+        );
+      });
       this.nodeBodies.updateBgColor(
-        allGraphOutputsNodeIds,
+        outputNodeIdsWithoutTint,
         new THREE.Color(SUBTLE_OUTPUT_NODE_BG_COLOR),
       );
       this.focusOutputNodeHighlights.setNodeHighlights(
@@ -3373,22 +3497,33 @@ export class WebglRenderer implements OnInit, OnChanges, OnDestroy {
       (nodeId) => this.isNodeRendered(nodeId),
     );
     if (seedHighlightTargetNodeIds.length > 0) {
-      this.nodeBodies.updateBgColor(
-        seedHighlightTargetNodeIds,
-        new THREE.Color(FOCUS_SEED_NODE_BG_COLOR),
+      this.focusSeedNodeHighlights.setNodeHighlights(
+        seedHighlightTargetNodeIds.reduce(
+          (acc, nodeId) => {
+            acc[nodeId] = {
+              nodeId,
+              borderColor: FOCUS_SEED_NODE_BORDER_COLOR,
+              borderWidth: FOCUS_SEED_NODE_BORDER_WIDTH,
+            };
+            return acc;
+          },
+          {} as {[nodeId: string]: HighlightInfo},
+        ),
+        true,
       );
-      if (useSvgTextRenderer) {
-        this.updateSvgTextsColor(
-          seedHighlightTargetNodeIds,
-          FOCUS_SEED_NODE_TEXT_COLOR,
-        );
-      } else {
-        this.texts.updateColorInNode(
-          seedHighlightTargetNodeIds,
-          new THREE.Color(FOCUS_SEED_NODE_TEXT_COLOR),
-        );
-      }
+    } else {
+      this.focusSeedNodeHighlights.clearNodeHighlights();
     }
+  }
+
+  private updateNodeAccentStripsOpacity(
+    nodeIds: string[],
+    opacity: number,
+  ) {
+    const segmentIds = nodeIds.flatMap(
+      (nodeId) => this.nodeAccentSegmentIdsByNodeId[nodeId] ?? [],
+    );
+    this.nodeAccentStrips.updateOpacity(segmentIds, opacity);
   }
 
   private shakeNode(nodeId: string) {

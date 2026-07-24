@@ -237,6 +237,12 @@ export declare interface GraphNodeStyle {
    * If not set, the default border width is 1.2
    */
   borderWidth?: number;
+
+  /** Categorical colors rendered as segments along the node's lower edge. */
+  accentColors?: string[];
+
+  /** Color blended into the normal theme background for focused membership. */
+  tintColor?: string;
 }
 
 /** Custom configs for a graph node. */

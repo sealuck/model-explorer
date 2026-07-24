@@ -98,6 +98,8 @@
     padding-bottom: 8px;
     border-bottom: 1px solid var(--me-outline-variant-color);
     gap: 8px;
+    max-height: min(60vh, 520px);
+    overflow-y: auto;
 
     .no-overlays-label {
       color: var(--me-on-surface-variant-color);
@@ -121,6 +123,76 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 4px;
+      }
+
+      .legend-selector {
+        min-width: 0;
+        flex: 1;
+        height: 26px;
+        padding: 3px 5px;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--me-on-surface-color);
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+
+        &:hover {
+          background: var(--me-surface-container-high-color);
+        }
+
+        &.highlighted {
+          border-color: var(--me-outline-color);
+          background: var(--me-surface-container-highest-color);
+        }
+
+        .legend-swatch {
+          width: 10px;
+          height: 10px;
+          flex: 0 0 10px;
+          border: 1px solid var(--me-outline-variant-color);
+        }
+
+        .legend-name {
+          min-width: 0;
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          line-height: 16px;
+        }
+
+        .legend-check {
+          width: 16px;
+          height: 16px;
+          flex: 0 0 16px;
+          font-size: 16px;
+          line-height: 16px;
+          color: var(--me-primary-color);
+        }
+      }
+
+      .overlay-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .overlay-action {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+
+        mat-icon {
+          width: 18px;
+          height: 18px;
+          font-size: 18px;
+          line-height: 18px;
+        }
       }
 
       .overlay-controls {
