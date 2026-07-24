@@ -194,6 +194,7 @@ class _MemoryProjection:
     incoming_edges_by_node: dict[str, list[dict]]
     layout_edges: list[Edge]
     overlay_edges_by_storage: dict[str, list[Edge]]
+    access_order_edges_by_storage: dict[str, list[Edge]]
     member_node_ids_by_storage: dict[str, set[str]]
     storage_ids_by_node: dict[str, set[str]]
     access_groups: tuple[_AccessGroup, ...]
@@ -279,14 +280,10 @@ def _storage_presentation(graph: dict) -> dict[str, dict]:
     counts = Counter(short_names)
     result = {}
     for storage, short_name in zip(storages, short_names):
-        display_name = (
-            short_name if counts[short_name] == 1 else storage["rootSsa"]
-        )
+        display_name = short_name if counts[short_name] == 1 else storage["rootSsa"]
         result[storage["id"]] = {
             "name": display_name,
-            "color": _STORAGE_COLORS[
-                storage["paletteSlot"] % len(_STORAGE_COLORS)
-            ],
+            "color": _STORAGE_COLORS[storage["paletteSlot"] % len(_STORAGE_COLORS)],
             "storage": storage,
         }
     return result
@@ -353,6 +350,56 @@ def _collect_access_groups(graph: dict) -> tuple[_AccessGroup, ...]:
     return tuple(result)
 
 
+def _node_attr(data: dict, key: str) -> str | None:
+    """Return one string Node attribute without building a second wire model."""
+    for attr in data.get("attrs", []):
+        if attr.get("key") == key and isinstance(attr.get("value"), str):
+            return attr["value"]
+    return None
+
+
+def _node_order(data: dict, fallback: int) -> tuple[int, int]:
+    """Order projected operations by explicit MLIR order, then Graph order."""
+    value = _node_attr(data, "viewer.graph_order")
+    if value is not None:
+        try:
+            return int(value), fallback
+        except ValueError:
+            pass
+    return fallback, fallback
+
+
+def _has_memory_effect(group: _AccessGroup) -> bool:
+    """Exclude pure View construction from a Storage access timeline."""
+    return any(
+        "readRegion" in (access := edge["metadata"]["memory"]["access"])
+        or "writeRegion" in access
+        for edge in group.edges
+    )
+
+
+def _source_aware_label(data: dict) -> str:
+    """Pair a generic lowered op with the source operation that produced it."""
+    label = data.get("label", "")
+    if not label.startswith(("linalg.", "memref.")):
+        return label
+    alignment_key = _node_attr(data, "viewer.alignment_key")
+    if not alignment_key or "::" not in alignment_key:
+        return label
+    source_name = alignment_key.rsplit("::", 1)[-1]
+    if not source_name or source_name == label:
+        return label
+
+    # Long specialized linalg names dominate compact Focus nodes. The full op
+    # remains available in viewer.operation_text and the side panel.
+    badge = label
+    if label.startswith("linalg.conv"):
+        badge = "linalg.conv"
+    elif label.startswith("linalg.pooling"):
+        badge = "linalg.pooling"
+    return f"{source_name} [{badge}]"
+
+
 def _constant_interval(region: dict) -> tuple[int, int] | None:
     """Return a half-open static byte interval when Graph proves one."""
     if region.get("kind") != "contiguous":
@@ -365,9 +412,7 @@ def _constant_interval(region: dict) -> tuple[int, int] | None:
     return begin, begin + length["value"]
 
 
-def _interval_is_covered(
-    interval: tuple[int, int], regions: list[dict]
-) -> bool:
+def _interval_is_covered(interval: tuple[int, int], regions: list[dict]) -> bool:
     """Prove that a union of static dependency regions covers one read."""
     begin, end = interval
     cursor = begin
@@ -394,8 +439,7 @@ def _read_is_supplied_by_dependencies(
     read_regions = [
         memory["access"]["readRegion"]
         for edge in group.edges
-        if "readRegion"
-        in (memory := edge["metadata"]["memory"])["access"]
+        if "readRegion" in (memory := edge["metadata"]["memory"])["access"]
     ]
     if not read_regions:
         return False
@@ -447,6 +491,7 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         for node in graph.get("nodes", [])
         if node["id"] not in hidden_node_ids
     }
+    storage_by_id = {storage["id"]: storage for storage in graph.get("storages", [])}
 
     incoming_by_node: dict[str, list[dict]] = {
         node["id"]: [
@@ -460,6 +505,8 @@ def _project_memory(graph: dict) -> _MemoryProjection:
     }
     overlays: dict[str, list[Edge]] = {}
     layout_edges: list[Edge] = []
+    layout_pairs: set[tuple[str, str]] = set()
+    access_order_edges: dict[str, list[Edge]] = {}
     memberships: dict[str, set[str]] = {}
     members_by_storage: dict[str, set[str]] = {}
 
@@ -469,6 +516,14 @@ def _project_memory(graph: dict) -> _MemoryProjection:
             return
         memberships.setdefault(node_id, set()).add(storage_id)
         members_by_storage.setdefault(storage_id, set()).add(node_id)
+
+    def add_layout_edge(edge: Edge) -> None:
+        """Add one topology constraint; parallel evidence stays in overlays."""
+        pair = (edge.sourceNodeId, edge.targetNodeId)
+        if edge.sourceNodeId == edge.targetNodeId or pair in layout_pairs:
+            return
+        layout_pairs.add(pair)
+        layout_edges.append(edge)
 
     dependencies_by_target: dict[tuple[str, str], list[dict]] = {}
     for dependency in dependencies:
@@ -494,7 +549,13 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         # One representative ordinary edge keeps initial reads, pure writes,
         # and View construction anchored at a visible argument/global root.
         representative = group.edges[0]
-        incoming_by_node[group.target_node_id].append(representative)
+        origin_kind = storage_by_id[group.storage_id]["origin"]["kind"]
+        # A large bufferized function commonly lifts every parameter and state
+        # buffer into its signature. Rendering those raw memref SSA edges makes
+        # the collapsed inputs group a many-hundred-line star. Keep the exact
+        # relation in its selectable Storage overlay and Node details instead.
+        if origin_kind not in ("argument", "global"):
+            incoming_by_node[group.target_node_id].append(representative)
         overlays.setdefault(group.storage_id, []).append(
             Edge(
                 sourceNodeId=group.source_node_id,
@@ -520,6 +581,7 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         )
         dependency_groups.setdefault(key, []).append(dependency)
 
+    rendered_dependency_pairs: dict[str, set[tuple[str, str]]] = {}
     for (
         storage_id,
         source_id,
@@ -530,12 +592,11 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         if source_id in hidden_node_ids or target_id in hidden_node_ids:
             continue
         edge_id = f"content:{grouped_dependencies[0]['id']}"
-        layout_edges.append(
-            Edge(
-                sourceNodeId=source_id,
-                targetNodeId=target_id,
-                id=edge_id,
-            )
+        add_layout_edge(
+            Edge(sourceNodeId=source_id, targetNodeId=target_id, id=edge_id)
+        )
+        rendered_dependency_pairs.setdefault(storage_id, set()).add(
+            (source_id, target_id)
         )
         overlays.setdefault(storage_id, []).append(
             Edge(
@@ -545,6 +606,41 @@ def _project_memory(graph: dict) -> _MemoryProjection:
                 label=_dependency_label(grouped_dependencies),
             )
         )
+
+    # Content dependencies intentionally stop at a complete overwrite. Keep a
+    # separate access-order relation so a Storage Focus remains one temporal
+    # sequence without claiming that old bytes flow into the new content epoch.
+    fallback_order = {
+        node["id"]: index for index, node in enumerate(graph.get("nodes", []))
+    }
+    explicit_order = {
+        node["id"]: _node_order(node, index)
+        for index, node in enumerate(graph.get("nodes", []))
+    }
+    access_nodes: dict[str, set[str]] = {}
+    for group in groups:
+        if _has_memory_effect(group) and group.target_node_id in visible_node_ids:
+            access_nodes.setdefault(group.storage_id, set()).add(group.target_node_id)
+    for storage_id, node_ids in access_nodes.items():
+        ordered = sorted(
+            node_ids,
+            key=lambda node_id: explicit_order.get(
+                node_id, (fallback_order.get(node_id, 0), 0)
+            ),
+        )
+        content_pairs = rendered_dependency_pairs.get(storage_id, set())
+        for source_id, target_id in zip(ordered, ordered[1:]):
+            pair = (source_id, target_id)
+            if pair in content_pairs:
+                continue
+            edge = Edge(
+                sourceNodeId=source_id,
+                targetNodeId=target_id,
+                id=f"access-order:{storage_id}:{source_id}->{target_id}",
+                label="next access (no content flow)",
+            )
+            add_layout_edge(edge)
+            access_order_edges.setdefault(storage_id, []).append(edge)
     for storage in graph.get("storages", []):
         add_membership(storage["origin"]["nodeId"], storage["id"])
 
@@ -552,6 +648,7 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         incoming_edges_by_node=incoming_by_node,
         layout_edges=layout_edges,
         overlay_edges_by_storage=overlays,
+        access_order_edges_by_storage=access_order_edges,
         member_node_ids_by_storage=members_by_storage,
         storage_ids_by_node=memberships,
         access_groups=groups,
@@ -586,6 +683,7 @@ def _memory_tasks(
         )
         if not edges and not member_node_ids:
             continue
+        origin_kind = item["storage"]["origin"]["kind"]
         overlays.append(
             EdgeOverlay(
                 name=item["name"],
@@ -593,7 +691,9 @@ def _memory_tasks(
                 edges=edges,
                 showEdgesConnectedToSelectedNodeOnly=False,
                 dimNonOverlayNodes=primary_storage_id == storage_id,
-                alwaysVisible=True,
+                alwaysVisible=(
+                    origin_kind == "allocation" or primary_storage_id == storage_id
+                ),
                 storageFocusSelector=item["storage"]["rootSsa"],
                 memberNodeIds=member_node_ids,
             )
@@ -607,7 +707,31 @@ def _memory_tasks(
         graphName=graph["id"],
         selectionMode="single_highlight",
     )
-    return TasksData(edgeOverlaysDataListLeftPane=[data])
+    task_data = [data]
+    if primary_storage_id:
+        order_edges = projection.access_order_edges_by_storage.get(
+            primary_storage_id, []
+        )
+        primary = presentation.get(primary_storage_id)
+        if order_edges and primary:
+            task_data.append(
+                EdgeOverlaysData(
+                    name="Storage access order",
+                    overlays=[
+                        EdgeOverlay(
+                            name=f"{primary['name']} access order",
+                            edgeColor="#777777",
+                            edgeWidth=1,
+                            edges=order_edges,
+                            showEdgesConnectedToSelectedNodeOnly=False,
+                            alwaysVisible=True,
+                        )
+                    ],
+                    selectByDefault=True,
+                    graphName=graph["id"],
+                )
+            )
+    return TasksData(edgeOverlaysDataListLeftPane=task_data)
 
 
 def _storage_origin_attrs(
@@ -714,9 +838,7 @@ def _storage_details_by_node(
             if node_id == origin_node_id:
                 continue
             result.setdefault(node_id, []).extend(
-                _storage_use_attrs(
-                    storage, name, node_groups, origin_is_visible
-                )
+                _storage_use_attrs(storage, name, node_groups, origin_is_visible)
             )
         for node_id in use_node_ids:
             producers = list(
@@ -758,7 +880,7 @@ def _build_node(
 ) -> GraphNode:
     return GraphNode(
         id=data["id"],
-        label=data.get("label", ""),
+        label=_source_aware_label(data),
         namespace=data.get("namespace", ""),
         incomingEdges=_to_edge_list(incoming_edges),
         inputsMetadata=_to_metadata_list(data.get("inputsMetadata", [])),

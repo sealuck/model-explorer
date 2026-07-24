@@ -19,6 +19,7 @@
 import {AppService} from './app_service';
 import {EdgeOverlaysData} from './common/edge_overlays';
 import {TaskType} from './common/task';
+import {Pane} from './common/types';
 import {EdgeOverlaysService, processOverlay} from './edge_overlays_service';
 
 const STORAGE_LEGEND: EdgeOverlaysData = {
@@ -39,7 +40,7 @@ const STORAGE_LEGEND: EdgeOverlaysData = {
       edgeColor: '#EE6677',
       edges: [],
       memberNodeIds: ['reader'],
-      alwaysVisible: true,
+      alwaysVisible: false,
       storageFocusSelector: '@main::%alloc_1',
     },
   ],
@@ -67,6 +68,23 @@ describe('EdgeOverlaysService', () => {
 
     service.toggleOverlayHighlight(secondOverlayId);
     expect(service.highlightedOverlayId()).toBe('');
+  });
+
+  it('temporarily activates a highlighted storage hidden from the overview', () => {
+    const pane = {id: 'test-pane', modelGraph: {id: 'main'}} as Pane;
+    const service = new EdgeOverlaysService({
+      getPaneById: () => pane,
+    } as unknown as AppService);
+    service.setPane(pane);
+    service.addEdgeOverlayData(STORAGE_LEGEND);
+    const hiddenOverlay = service.allLoadedEdgeOverlays()[0].processedOverlays[1];
+
+    expect(service.selectedOverlays()[1].alwaysVisible).toBeFalse();
+    service.toggleOverlayHighlight(hiddenOverlay.id);
+    expect(service.selectedOverlays()[1].alwaysVisible).toBeTrue();
+
+    service.toggleOverlayHighlight(hiddenOverlay.id);
+    expect(service.selectedOverlays()[1].alwaysVisible).toBeFalse();
   });
 
   it('preserves checkbox visibility selection for ordinary overlays', () => {

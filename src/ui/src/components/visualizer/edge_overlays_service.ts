@@ -56,10 +56,18 @@ export class EdgeOverlaysService {
 
   readonly selectedOverlays = computed(() => {
     const overlays: ProcessedEdgeOverlay[] = [];
+    const highlightedOverlayId = this.highlightedOverlayId();
     for (const overlayData of this.filteredLoadedEdgeOverlays()) {
       for (const overlay of overlayData.processedOverlays) {
         if (this.selectedOverlayIds().includes(overlay.id)) {
-          overlays.push(overlay);
+          // A Storage omitted from the weak overview still needs to become
+          // visible when its legend row is highlighted. Return a presentation
+          // copy so clearing the highlight restores the declared default.
+          overlays.push(
+            overlay.id === highlightedOverlayId && !overlay.alwaysVisible
+              ? {...overlay, alwaysVisible: true}
+              : overlay,
+          );
         }
       }
     }
