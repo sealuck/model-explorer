@@ -358,6 +358,22 @@ def _node_attr(data: dict, key: str) -> str | None:
     return None
 
 
+def _storage_is_quiet_by_default(storage: dict, nodes_by_id: dict[str, dict]) -> bool:
+    """Hide only compiler state whose frontend ABI role is explicit."""
+    origin = storage["origin"]
+    if origin["kind"] == "global":
+        return True
+    if origin["kind"] != "argument":
+        return False
+    origin_node = nodes_by_id.get(origin["nodeId"])
+    if origin_node is None:
+        return False
+    return _node_attr(origin_node, "viewer.model_input_kind") in {
+        "parameter",
+        "buffer",
+    }
+
+
 def _node_order(data: dict, fallback: int) -> tuple[int, int]:
     """Order projected operations by explicit MLIR order, then Graph order."""
     value = _node_attr(data, "viewer.graph_order")
@@ -492,6 +508,7 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         if node["id"] not in hidden_node_ids
     }
     storage_by_id = {storage["id"]: storage for storage in graph.get("storages", [])}
+    nodes_by_id = {node["id"]: node for node in graph.get("nodes", [])}
 
     incoming_by_node: dict[str, list[dict]] = {
         node["id"]: [
@@ -549,12 +566,11 @@ def _project_memory(graph: dict) -> _MemoryProjection:
         # One representative ordinary edge keeps initial reads, pure writes,
         # and View construction anchored at a visible argument/global root.
         representative = group.edges[0]
-        origin_kind = storage_by_id[group.storage_id]["origin"]["kind"]
-        # A large bufferized function commonly lifts every parameter and state
-        # buffer into its signature. Rendering those raw memref SSA edges makes
-        # the collapsed inputs group a many-hundred-line star. Keep the exact
-        # relation in its selectable Storage overlay and Node details instead.
-        if origin_kind not in ("argument", "global"):
+        storage = storage_by_id[group.storage_id]
+        # Torch frontends explicitly distinguish user inputs from lifted state.
+        # Keep real inputs (and unclassified generic MLIR arguments) in ordinary
+        # dataflow while moving only known parameters/buffers to on-demand lanes.
+        if not _storage_is_quiet_by_default(storage, nodes_by_id):
             incoming_by_node[group.target_node_id].append(representative)
         overlays.setdefault(group.storage_id, []).append(
             Edge(
@@ -667,6 +683,7 @@ def _memory_tasks(
     node_order = {
         node["id"]: index for index, node in enumerate(graph.get("nodes", []))
     }
+    nodes_by_id = {node["id"]: node for node in graph.get("nodes", [])}
     presentation_items = list(presentation.items())
     # Hidden allocations depend on the legend for discovery, so keep them
     # ahead of already-visible argument/global roots. Python's stable sort
@@ -683,7 +700,7 @@ def _memory_tasks(
         )
         if not edges and not member_node_ids:
             continue
-        origin_kind = item["storage"]["origin"]["kind"]
+        quiet_by_default = _storage_is_quiet_by_default(item["storage"], nodes_by_id)
         overlays.append(
             EdgeOverlay(
                 name=item["name"],
@@ -692,7 +709,7 @@ def _memory_tasks(
                 showEdgesConnectedToSelectedNodeOnly=False,
                 dimNonOverlayNodes=primary_storage_id == storage_id,
                 alwaysVisible=(
-                    origin_kind == "allocation" or primary_storage_id == storage_id
+                    not quiet_by_default or primary_storage_id == storage_id
                 ),
                 storageFocusSelector=item["storage"]["rootSsa"],
                 memberNodeIds=member_node_ids,

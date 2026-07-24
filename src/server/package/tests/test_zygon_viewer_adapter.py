@@ -492,7 +492,18 @@ def test_should_coalesce_repeated_dps_view_and_preserve_operand_roles(tmp_path):
     assert generic.style.accentColors == ["#CCBB44"]
 
 
-def test_should_keep_argument_storage_origin_visible(tmp_path):
+@pytest.mark.parametrize(
+    ("input_kind", "show_by_default"),
+    [
+        ("parameter", False),
+        ("buffer", False),
+        ("user", True),
+        (None, True),
+    ],
+)
+def test_should_quiet_only_explicit_state_arguments(
+    tmp_path, input_kind, show_by_default
+):
     region = {
         "kind": "contiguous",
         "offsetBytes": {"kind": "constant", "value": 0},
@@ -509,6 +520,16 @@ def test_should_keep_argument_storage_origin_visible(tmp_path):
                         "id": "arg0",
                         "label": "arg0",
                         "outputsMetadata": [{"id": "0", "attrs": []}],
+                        "attrs": (
+                            [
+                                {
+                                    "key": "viewer.model_input_kind",
+                                    "value": input_kind,
+                                }
+                            ]
+                            if input_kind is not None
+                            else []
+                        ),
                     },
                     {
                         "id": "load",
@@ -556,11 +577,13 @@ def test_should_keep_argument_storage_origin_visible(tmp_path):
 
     assert [node.id for node in graph.nodes] == ["arg0", "load"]
     load = graph.nodes[1]
-    # Function arguments remain selectable Storage roots, but their raw
-    # memref SSA edges do not flood the initial Buffer Graph.
-    assert load.incomingEdges == []
+    # Explicit parameter/buffer roles stay selectable but quiet. A user input
+    # and a generic MLIR argument with no frontend role retain ordinary flow.
+    assert [
+        (edge.sourceNodeId, edge.targetNodeInputId) for edge in load.incomingEdges
+    ] == ([("arg0", "0")] if show_by_default else [])
     overlay = graph.tasksData.edgeOverlaysDataListLeftPane[0].overlays[0]
-    assert overlay.alwaysVisible is False
+    assert overlay.alwaysVisible is show_by_default
     assert [(edge.sourceNodeId, edge.targetNodeId) for edge in overlay.edges] == [
         ("arg0", "load")
     ]
