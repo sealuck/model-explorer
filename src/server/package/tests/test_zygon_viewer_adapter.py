@@ -298,6 +298,103 @@ def test_should_project_writer_to_reader_content_flow(tmp_path):
     assert load_details["%alloc Content producers"].nodeIds == ["store"]
 
 
+def test_should_keep_model_output_connected_when_allocation_is_hidden(tmp_path):
+    region = {
+        "kind": "contiguous",
+        "offsetBytes": {"kind": "constant", "value": 0},
+        "lengthBytes": {"kind": "constant", "value": 16},
+    }
+
+    def memory_edge(edge_id, target_id, access_kind):
+        return {
+            "id": edge_id,
+            "sourceNodeId": "alloc",
+            "sourceNodeOutputId": "0",
+            "targetNodeInputId": target_id,
+            "metadata": {
+                "memory": {
+                    "storageId": "storage:alloc:0",
+                    "viewRegion": region,
+                    "access": {access_kind: region},
+                }
+            },
+        }
+
+    document = {
+        "schemaVersion": "zygon-viewer/graph/v5",
+        "label": "bufferized-output",
+        "graphs": [
+            {
+                "id": "main",
+                "nodes": [
+                    {
+                        "id": "alloc",
+                        "label": "memref.alloc",
+                        "outputsMetadata": [{"id": "0", "attrs": []}],
+                    },
+                    {
+                        "id": "fill",
+                        "label": "linalg.fill",
+                        "incomingEdges": [
+                            memory_edge("write-edge", "1", "writeRegion")
+                        ],
+                    },
+                    {
+                        "id": "outputs0",
+                        "label": "outputs0",
+                        "inputsMetadata": [{"id": "0", "attrs": []}],
+                        "incomingEdges": [
+                            memory_edge("return-edge", "0", "readRegion")
+                        ],
+                    },
+                ],
+                "memoryDependencies": [
+                    {
+                        "id": "output-content",
+                        "storageId": "storage:alloc:0",
+                        "sourceNodeId": "fill",
+                        "targetNodeId": "outputs0",
+                        "region": region,
+                        "certainty": "must",
+                    }
+                ],
+                "storages": [
+                    {
+                        "id": "storage:alloc:0",
+                        "rootSsa": "@main::%alloc",
+                        "paletteSlot": 0,
+                        "origin": {
+                            "kind": "allocation",
+                            "nodeId": "alloc",
+                            "outputId": "0",
+                        },
+                        "region": region,
+                        "memorySpace": "default",
+                    }
+                ],
+            }
+        ],
+    }
+    model = tmp_path / "bufferized-output.json"
+    model.write_text(json.dumps(document))
+
+    result = ZygonViewerAdapter().convert(str(model), {})
+
+    graph = result["graphCollections"][0].graphs[0]
+    assert {node.id for node in graph.nodes} == {"fill", "outputs0"}
+    output = next(node for node in graph.nodes if node.id == "outputs0")
+    assert output.incomingEdges == []
+    assert [
+        (edge.sourceNodeId, edge.targetNodeId) for edge in graph.layoutEdges
+    ] == [("fill", "outputs0")]
+    overlay = graph.tasksData.edgeOverlaysDataListLeftPane[0].overlays[0]
+    assert set(overlay.memberNodeIds) == {"fill", "outputs0"}
+    assert [
+        (edge.sourceNodeId, edge.targetNodeId, edge.label)
+        for edge in overlay.edges
+    ] == [("fill", "outputs0", "content [0, 16) bytes")]
+
+
 def test_should_coalesce_repeated_dps_view_and_preserve_operand_roles(tmp_path):
     region = {
         "kind": "contiguous",
